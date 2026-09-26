@@ -1,7 +1,8 @@
 # flyjs — drone scaffold
 
-Lightweight flyable-drone + procedural-island starter. Extracted (not cloned)
-from [rishabhrathod01/rishabhrathod01.github.io](https://github.com/rishabhrathod01/rishabhrathod01.github.io)
+Lightweight flyable-drone + procedural-island starter. 
+https://nomsams.github.io/drdron
+
 (MIT licensed — see Attribution), keeping **only the drone flight + world** parts.
 
 ## What was kept
