@@ -1,9 +1,11 @@
 "use client";
 
 import { Component, type ReactNode } from "react";
+import { blogErr } from "@/lib/bootlog";
 
 // Catches render/3D crashes (e.g. WebGL unavailable) and shows a readable
-// message instead of a blank page.
+// message instead of a blank page. The error also goes to the boot log so it
+// survives alongside the global error hooks.
 
 export default class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -13,7 +15,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, { 
   }
 
   componentDidCatch(error: Error) {
-    console.error("[flyjs]", error);
+    blogErr(error, "ErrorBoundary");
   }
 
   render() {

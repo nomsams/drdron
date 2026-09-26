@@ -1,9 +1,10 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { flight, resetFlight, setTakeoffRequestHandler, useFlightStore } from "@/state/flight";
 import { engineAudio } from "@/lib/audio";
+import { blog } from "@/lib/bootlog";
 import { QUALITY_PRESETS, type QualityLevel } from "@/config/quality";
 import Drone from "./Drone";
 import ChaseCamera from "./ChaseCamera";
@@ -21,6 +22,18 @@ function SquadGhosts() {
   return <RemotePilots />;
 }
 
+// One-shot boot marker: proves the WebGL loop is alive (vs. a hung Canvas).
+function FirstFrameLog() {
+  const done = useRef(false);
+  useFrame(() => {
+    if (!done.current) {
+      done.current = true;
+      blog("first 3D frame rendered — boot complete");
+    }
+  });
+  return null;
+}
+
 export default function DroneExperience({ level }: { level: QualityLevel }) {
   const quality = QUALITY_PRESETS[level];
   const phase = useFlightStore((s) => s.phase);
@@ -36,6 +49,10 @@ export default function DroneExperience({ level }: { level: QualityLevel }) {
   scatter.current = { trees: quality.trees, rocks: quality.rocks, grass: quality.grass };
 
   useFlightControls();
+
+  useEffect(() => {
+    blog(`DroneExperience mounted (quality=${level})`);
+  }, [level]);
 
   // --- Long-press charge machine ---
   const beginCharge = useCallback(() => {
@@ -222,6 +239,7 @@ export default function DroneExperience({ level }: { level: QualityLevel }) {
         <Drone scatter={scatter.current} />
         <ChaseCamera />
         <SquadGhosts />
+        <FirstFrameLog />
         {worldMounted && (
           <Suspense fallback={null}>
             <FlightScene quality={quality} />

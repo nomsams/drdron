@@ -54,6 +54,22 @@ Note: first `dev` load compiles three.js on demand and can take a while —
 the boot splash + "warming up the island…" fallback cover that gap, and the
 production build has no such delay.
 
+## Stuck on "loading flyjs…"?
+
+The splash now carries a timestamped boot log — read it before anything else:
+
+1. **Red `file://` line** — you double-clicked the HTML file. ES modules are
+   blocked that way. Run `npm run dev` and open the `http://localhost:5173`
+   URL it prints (or `npm run build && npm run preview`).
+2. **Red chunk/resource line** — dev server died, port changed (check the
+   terminal — Vite moves to `:5174` if `:5173` is taken), offline, or an
+   adblocker ate a chunk. The 3D chunk retries 3×, then offers a Retry button.
+3. **Red exception line** — copy it (F12 console has the full stack).
+4. **No red, just slow** — first dev compile of three.js can take 30–60 s;
+   the 20 s watchdog says so explicitly. `?quality=potato` lowers startup cost.
+5. Still dead? Hard-refresh (Ctrl+Shift+R) to drop a stale service worker /
+   cached chunk, then file an issue with the log lines + browser version.
+
 ## Controls
 
 - **Take Off**: button or hold `F` (1.1 s charge) · **Land**: button or `Esc`

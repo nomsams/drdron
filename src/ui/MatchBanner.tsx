@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TOMATO_TARGETS } from "@/config/tomato";
 import { useMp } from "@/state/mp";
 import { useTomato } from "@/state/tomato";
@@ -26,10 +26,12 @@ export default function MatchBanner() {
   contenders.sort((a, b) => b.hits - a.hits);
   const winner = contenders[0] ?? null;
 
-  if (!winner) {
-    if (ackKey !== null) setAckKey(null);
-    return null;
-  }
+  // Clear a stale dismissal once there's no winner (no render-phase updates).
+  useEffect(() => {
+    if (!winner) setAckKey(null);
+  }, [winner]);
+
+  if (!winner) return null;
   const key = `${winner.id}:${winner.hits}`;
   if (ackKey === key) return null;
 
