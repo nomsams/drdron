@@ -4,6 +4,11 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react()],
+  // Pinned to the GitHub Pages project URL: built asset URLs become
+  // "/drdron/assets/…". (Deploy the contents of dist/, not the repo root —
+  // the root index.html points at /src/main.tsx and only works under
+  // `npm run dev`.)
+  base: "/drdron/",
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

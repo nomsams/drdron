@@ -51,6 +51,17 @@ npm run dev      # http://localhost:5173
 npm run build    # tsc + vite build → dist/
 ```
 
+## Deploy (GitHub Pages → https://nomsams.github.io/drdron/)
+
+`vite.config.ts` pins `base: "/drdron/"` so chunks load from the project
+subpath. **Publish the contents of `dist/`, never the repo root** — the root
+`index.html` points at `/src/main.tsx`, which only exists under `npm run dev`
+(serving it live is exactly the stuck-"loading flyjs" boot you saw).
+
+Automatic: push to `main` and `.github/workflows/deploy.yml` builds +
+publishes `dist/` (one-time setup: repo Settings → Pages → Source: "GitHub
+Actions"). Manual: `npm run build`, then upload `dist/` to any static host.
+
 Note: first `dev` load compiles three.js on demand and can take a while —
 the boot splash + "warming up the island…" fallback cover that gap, and the
 production build has no such delay.
