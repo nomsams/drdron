@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0c1324" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>flyjs — drone scaffold</title>
+    <meta
+      name="description"
+      content="Lightweight flyable drone + procedural island scaffold with scalable graphics tiers."
+    />
+    <style>
+      /* Instant first paint: shown before JS/CSS bundles load, removed on mount. */
+      html, body { margin: 0; background: #0c1324; color: #e8eaf6; }
+      #boot {
+        position: fixed; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 14px;
+        font-family: system-ui, sans-serif; z-index: 100;
+      }
+      #boot .spin {
+        width: 34px; height: 34px; border-radius: 50%;
+        border: 3px solid rgba(192,193,255,0.25); border-top-color: #c0c1ff;
+        animation: bootspin 0.9s linear infinite;
+      }
+      @keyframes bootspin { to { transform: rotate(360deg); } }
+      #boot p { margin: 0; font-size: 14px; opacity: 0.7; }
+    </style>
+  </head>
+  <body>
+    <div id="boot"><div class="spin"></div><p>loading flyjs…</p></div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

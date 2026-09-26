@@ -1,0 +1,53 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #0c1324;
+  color: #e8eaf6;
+  font-family: system-ui, -apple-system, sans-serif;
+  /* Game shell: no pull-to-refresh / rubber-banding while flying. Inner
+     scrollable panels (squad roster) keep their own touch scrolling. */
+  overscroll-behavior: none;
+}
+
+html {
+  /* iOS Safari needs this on html to stop double-tap zoom on buttons. */
+  touch-action: manipulation;
+}
+
+canvas {
+  display: block;
+}
+
+button {
+  font-family: inherit;
+}
+
+code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 0.9em;
+}
+
+/* Hero copy: centered on small screens, docked left on desktop so the
+   hovering drone owns the right half of the viewport. */
+.hero {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 22vh 20px 40px;
+  text-align: center;
+}
+
+@media (min-width: 900px) {
+  .hero {
+    margin: 0 0 0 7vw;
+    max-width: 520px;
+    padding-top: 26vh;
+    text-align: left;
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "flyjs-drone-scaffold",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lightweight flyable-drone + procedural island scaffold, extracted from rishabhrathod01.github.io (drone/world only, no CV content).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@react-three/fiber": "^9.3.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "simplex-noise": "^4.0.3",
+    "three": "0.184.0",
+    "trystero": "^0.25.4",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/three": "^0.184.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^7.1.7"
+  }
+}
