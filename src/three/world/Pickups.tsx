@@ -1,22 +1,29 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
-import { PICKUPS } from "@/config/world";
+import {
+  BATTERY_PACK_CHARGE,
+  BATTERY_PACK_RADIUS,
+  BATTERY_PACK_RESPAWN_MS,
+  PICKUPS,
+} from "@/config/world";
 import { heightAt } from "@/lib/terrain";
 import { P } from "@/lib/palette";
-import { flight, pickups, registerPickup, useFlightStore } from "@/state/flight";
+import { flight, isPackDown, takePack, useFlightStore } from "@/state/flight";
+import { spawnBurst } from "@/state/bursts";
+import { toast } from "@/state/toasts";
 import { engineAudio } from "@/lib/audio";
 
-// Generic collectible pickups — the exploration easter egg without any CV
-// meaning. Proximity is checked at 10 Hz (not per frame, no React churn).
+// Battery packs: glowing green cells floating around the island. Fly through
+// one to recharge the flight battery (+30%). Left alone when you're already
+// full, so they're there when you need them; respawn after a while.
+// Proximity is checked at 10 Hz (not per frame, no React churn).
 
-function Cell({ id, x, z, yOffset }: { id: string; x: number; z: number; yOffset: number }) {
+function Cell({ x, z, yOffset }: { x: number; z: number; yOffset: number }) {
   const group = useRef<THREE.Group>(null);
   const y = heightAt(x, z) + yOffset;
-
-  useEffect(() => registerPickup({ id, position: [x, y, z], radius: 1.6 }), [id, x, y, z]);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -41,42 +48,47 @@ function Cell({ id, x, z, yOffset }: { id: string; x: number; z: number; yOffset
 }
 
 export default function Pickups() {
-  const cells = useFlightStore((s) => s.cells);
+  const [, setVersion] = useState(0);
 
   useEffect(() => {
+    const down = new Set<string>();
     const iv = setInterval(() => {
-      const st = useFlightStore.getState();
-      if (st.phase !== "flight") return;
-      const p = flight.pos;
-      for (const item of pickupsFallback()) {
-        if (st.cells.includes(item.id)) continue;
-        const dx = p.x - item.position[0];
-        const dy = p.y - item.position[1];
-        const dz = p.z - item.position[2];
-        if (dx * dx + dy * dy + dz * dz < item.radius * item.radius) {
-          st.collectCell(item.id);
-          engineAudio.playCollect();
+      let changed = false;
+      const flying = useFlightStore.getState().phase === "flight";
+      for (const c of PICKUPS) {
+        const isDown = isPackDown(c.id);
+        if (isDown !== down.has(c.id)) {
+          changed = true;
+          if (isDown) down.add(c.id);
+          else down.delete(c.id);
         }
+        // Full battery: leave it for later instead of wasting it.
+        if (isDown || !flying || flight.battery >= 0.99) continue;
+        const cy = heightAt(c.x, c.z) + c.yOffset;
+        const dx = flight.pos.x - c.x;
+        const dy = flight.pos.y - cy;
+        const dz = flight.pos.z - c.z;
+        if (dx * dx + dy * dy + dz * dz > BATTERY_PACK_RADIUS * BATTERY_PACK_RADIUS) continue;
+        const before = flight.battery;
+        flight.battery = Math.min(1, flight.battery + BATTERY_PACK_CHARGE);
+        takePack(c.id, BATTERY_PACK_RESPAWN_MS);
+        down.add(c.id);
+        changed = true;
+        useFlightStore.getState().collectPack();
+        engineAudio.playCollect();
+        spawnBurst("repair", c.x, cy, c.z);
+        toast(`🔋 Battery pack +${Math.round((flight.battery - before) * 100)}%`, "good");
       }
+      if (changed) setVersion((v) => v + 1);
     }, 100);
     return () => clearInterval(iv);
   }, []);
 
   return (
     <>
-      {PICKUPS.filter((c) => !cells.includes(c.id)).map((c) => (
-        <Cell key={c.id} id={c.id} x={c.x} z={c.z} yOffset={c.yOffset} />
+      {PICKUPS.filter((c) => !isPackDown(c.id)).map((c) => (
+        <Cell key={c.id} x={c.x} z={c.z} yOffset={c.yOffset} />
       ))}
     </>
   );
-}
-
-// Read the live registry, falling back to static positions before mount.
-function pickupsFallback() {
-  if (pickups.size > 0) return Array.from(pickups.values());
-  return PICKUPS.map((c) => ({
-    id: c.id,
-    position: [c.x, heightAt(c.x, c.z) + c.yOffset, c.z] as [number, number, number],
-    radius: 1.6,
-  }));
 }

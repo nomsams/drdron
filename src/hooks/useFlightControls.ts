@@ -5,7 +5,7 @@ import { keys, resetKeys, useFlightStore } from "@/state/flight";
 import { engineAudio } from "@/lib/audio";
 
 // Flight scheme: W/S ascend/descend, A/D yaw, arrows fly (fwd/back/strafe),
-// Space/C also vertical, Shift = sport mode.
+// Space/C also vertical, Shift = sport mode, Q/E tilt the camera.
 const FLIGHT_MAP: Record<string, keyof typeof keys> = {
   KeyW: "up",
   KeyS: "down",
@@ -21,6 +21,8 @@ const FLIGHT_MAP: Record<string, keyof typeof keys> = {
   ControlRight: "down",
   ShiftLeft: "sport",
   ShiftRight: "sport",
+  KeyQ: "camUp",
+  KeyE: "camDown",
 };
 
 // Idle scheme: gentle 2D hover nudge. Excludes Space/Shift/Ctrl so page

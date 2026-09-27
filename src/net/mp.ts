@@ -20,6 +20,7 @@
 // next one. No server; the shard's own transport count is the signal.
 
 import { joinRoom, selfId, type Room, type RelayConfig, type TurnServerConfig } from "trystero";
+import { Euler } from "three";
 import { flight, useFlightStore } from "@/state/flight";
 import { useMp } from "@/state/mp";
 import { spawnRemoteTomato, useTomato } from "@/state/tomato";
@@ -223,8 +224,10 @@ function validPacket(d: unknown): Omit<RemoteState, "seen"> | null {
     y: clamp(pos[1], -50, 100),
     z: clamp(pos[2], -200, 200),
     heading: p.h as number,
-    pitch: clamp(p.pi as number, -1, 1),
-    roll: clamp(p.ro as number, -1, 1),
+    // ±π: Acro loops and flip tricks send full orientations now (older
+    // clients clamped to ±1 rad and would show flips as a wobble).
+    pitch: clamp(p.pi as number, -Math.PI, Math.PI),
+    roll: clamp(p.ro as number, -Math.PI, Math.PI),
     spin: clamp(p.spin as number, 0, 1),
     flying: p.f === 1,
     name: typeof p.name === "string" ? p.name.slice(0, 24) || "Pilot" : "Pilot",
@@ -281,13 +284,16 @@ function buildPacket(): StatePacket {
   const name = mp.name.trim().slice(0, 24) || "Pilot";
   const tom = useTomato.getState();
   const race = useRace.getState();
+  // The RENDERED orientation (includes Acro loops and flip tricks), as YXZ
+  // Euler — receivers rebuild the exact same quaternion from it.
+  _euler.setFromQuaternion(flight.quat, "YXZ");
   return {
     v: 1,
     id: selfId,
     p: [flight.pos.x, flight.pos.y, flight.pos.z],
-    h: flight.heading,
-    pi: flight.pitch,
-    ro: flight.roll,
+    h: _euler.y,
+    pi: _euler.x,
+    ro: _euler.z,
     spin: flight.propSpin,
     f: phase === "flight" || phase === "launching" || phase === "landing" ? 1 : 0,
     name,
@@ -305,6 +311,8 @@ function buildPacket(): StatePacket {
       : {}),
   };
 }
+
+const _euler = new Euler(0, 0, 0, "YXZ");
 
 /** Two decimals is plenty for 10 Hz state and keeps packets small. */
 function round2(v: number): number {

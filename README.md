@@ -87,8 +87,13 @@ The splash now carries a timestamped boot log — read it before anything else:
 - **Take Off**: button or hold `F` (1.1 s charge) · **Land**: button or `Esc`
 - In flight: `W/S` ascend/descend · `A/D` yaw · arrows fly/strafe ·
   `Shift` sport · `R` toggle reward rings · `T`/`B` or the 🍅 button drops a
-  tomato · `G` or the 🏀 button releases the basketball · `V` or the 🥽 button
-  swaps chase/FPV view · `Esc` land
+  tomato · `G` or the 🏀 button releases the basketball · `Esc` land
+- View: `V` (or 🥽) swaps chase / FPV goggles · `Q`/`E` (hold) tilt the
+  camera up / down, or the 📷 button snaps forward → 45° → straight down
+- Flying style: `M` (or 🎮) cycles Easy → Angle → Acro · `X` (or 🔄) does a
+  flip trick in Easy/Angle (backflip; hold ↑ for a front flip, ←/→ to roll)
+- Acro: `↑/↓` pitch rate · `←/→` roll rate · `A/D` yaw · `W` throttle up ·
+  `S` throttle cut · nothing self-levels
 - Idle: `WASD`/arrows nudge the hovering drone
 - URL hooks: `?quality=potato|balanced|high|ultra` forces a tier,
   `?autofly=1` takes off automatically (demos, screenshots),
@@ -154,6 +159,51 @@ The splash now carries a timestamped boot log — read it before anything else:
   every takeoff, ~5 min to empty at a gentle hover, faster under
   throttle/sport) — it blinks amber under 20%, red under 10%, and forces a
   landing at 0%, mirroring a real FPV failsafe.
+
+## Flight modes, wind, and the FPV OSD
+
+The flight model lives in `src/lib/flightModel.ts` as pure functions (no
+React, no stores), so it can be stepped headlessly.
+
+| mode | what the sticks do | limits |
+|---|---|---|
+| **Easy** (default) | velocity follows the sticks directly; tilt is cosmetic | — |
+| **Angle** | sticks set a tilt; the tilted thrust is what moves you (momentum, drift, wind), throttle holds altitude | tilt ≤ 26° (41° sport), self-levels |
+| **Acro** | sticks set rotation *rates*; thrust always points out of the belly | **none** — pitch past vertical, loop, fly inverted |
+
+Keys are on/off, so Angle and Acro run them through **virtual sticks**: a
+held key travels the stick out over ~0.45 s and it springs back on release,
+and Acro rates use an **expo** curve — a quick tap nudges the nose ~3° and
+it stays there (that's how you fly forward in acro), holding ↓ ramps up to
+the full 200°/s and loops you in ~2 s. Checked headlessly: Angle tops out at
+~9 m/s at a steady 26° with altitude held, Acro hovers level with no drift.
+`X` adds a canned 360° flip trick in Easy/Angle. Squadmates see your real
+orientation, loops and flips included.
+
+**Wind** (`src/state/wind.ts`, Settings: off / light / strong) veers, breathes
+and gusts as a pure function of the clock, so everyone with the same setting
+flies in the same weather. It pushes the drone (fully in Angle/Acro, partly
+in Easy), carries the basketball (the aim arc accounts for it) and drifts the
+clouds. Two airfield **windsocks** — at the helipad and on the beach — point
+downwind and lift from limp to streaming with speed; the HUD shows speed,
+where it's from, and an arrow for how it's pushing you relative to your nose;
+the minimap has a north-up wind arrow.
+
+**FPV OSD** (`src/ui/FpvOverlay.tsx`, `FpvInstruments.tsx`): an **artificial
+horizon** split bar with a ±10°/±20° pitch ladder around the crosshair,
+computed from the live camera (orientation, fov, gimbal tilt) so it sits on
+the true horizon in any attitude — verified to 0 px against projected
+horizon points — and pins dashed to the edge when the horizon's out of view;
+a **compass tape** with heading readout; HP, wind, camera tilt and flight
+mode; battery, signal, REC timer.
+
+**Camera tilt**: in FPV the gimbal pitches from forward to straight down; in
+chase view the camera rises to a near top-down view — handy for lining up
+basketball and tomato drops.
+
+**Battery packs**: the glowing green cells recharge the flight battery by
+30% (only taken when you're below full; respawn after 40 s). The chase HUD
+now shows a battery bar next to HP.
 
 ## Hull (HP)
 

@@ -10,6 +10,11 @@ import { persist } from "zustand/middleware";
 
 export type TouchMode = "auto" | "on" | "off";
 export type CameraMode = "chase" | "fpv";
+/** easy = arcade (velocity follows the sticks), angle = real thrust-vector
+ *  physics with self-levelling, acro = rate mode (no self-levelling — full
+ *  flips and loops, you manage throttle). */
+export type FlightMode = "easy" | "angle" | "acro";
+export type WindLevel = "off" | "light" | "strong";
 
 interface SettingsState {
   birds: boolean;
@@ -25,6 +30,8 @@ interface SettingsState {
   sensitivity: number;
   /** Chase (third-person) or FPV (goggle-style first-person). */
   cameraMode: CameraMode;
+  flightMode: FlightMode;
+  wind: WindLevel;
   set: (patch: Partial<SettingsState>) => void;
   reset: () => void;
 }
@@ -41,6 +48,8 @@ const DEFAULTS = {
   touch: "auto" as TouchMode,
   sensitivity: 1,
   cameraMode: "chase" as CameraMode,
+  flightMode: "easy" as FlightMode,
+  wind: "light" as WindLevel,
 };
 
 export const useSettings = create<SettingsState>()(

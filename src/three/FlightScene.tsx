@@ -26,6 +26,7 @@ import BasketballHoops from "./world/BasketballHoops";
 import Basketball from "./world/Basketball";
 import RepairKits from "./world/RepairKits";
 import ImpactBursts from "./world/ImpactBursts";
+import Windsocks from "./world/Windsock";
 import BlobShadow from "./world/BlobShadow";
 import GuideArrow from "./GuideArrow";
 import AmbientAudio from "./AmbientAudio";
@@ -121,6 +122,7 @@ export default function FlightScene({ quality }: { quality: QualityPreset }) {
       <Basketball />
       <RepairKits scatter={scatter} />
       <ImpactBursts />
+      <Windsocks />
       <GuideArrow />
       {/* NOTE: RemotePilots renders at the Canvas root (DroneExperience) so
           squad ghosts stay visible while idle/charging and before the world

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { flight, requestTakeoff, useFlightStore } from "@/state/flight";
 import { engineAudio } from "@/lib/audio";
-import { PICKUPS, REWARD_RINGS } from "@/config/world";
+import { REWARD_RINGS } from "@/config/world";
 import { QUALITY_PRESETS, type QualityLevel } from "@/config/quality";
 import { touchActive, useSettings } from "@/state/settings";
 import { useMp } from "@/state/mp";
@@ -19,7 +19,8 @@ import MatchBanner from "./MatchBanner";
 import SettingsPanel from "./SettingsPanel";
 import SquadPanel from "./SquadPanel";
 import FpvOverlay from "./FpvOverlay";
-import { HullBar, HullFlash, Toasts } from "./HullBar";
+import { BatteryBar, HullBar, HullFlash, Toasts, WindReadout } from "./HullBar";
+import { cycleCamTilt, cycleFlightMode, requestFlip, toggleView } from "@/state/tricks";
 
 // Minimal DOM overlay. Replaces the upstream FlightHUD + FocusPanel +
 // RaceResults + TakeoffPrompt + IdleInteractionLayer (~25 KB of CV-specific
@@ -79,7 +80,7 @@ export default function HUD({
   onQuality: (q: QualityLevel | "auto") => void;
 }) {
   const phase = useFlightStore((s) => s.phase);
-  const cells = useFlightStore((s) => s.cells);
+  const packsCollected = useFlightStore((s) => s.packsCollected);
   const soundEnabled = useFlightStore((s) => s.soundEnabled);
   const toggleSound = useFlightStore((s) => s.toggleSound);
   const rewardsEnabled = useFlightStore((s) => s.rewardsEnabled);
@@ -95,7 +96,7 @@ export default function HUD({
   const minimapOn = useSettings((s) => s.minimap);
   const touchMode = useSettings((s) => s.touch);
   const cameraMode = useSettings((s) => s.cameraMode);
-  const setSetting = useSettings((s) => s.set);
+  const flightMode = useSettings((s) => s.flightMode);
   const squadJoined = useMp((s) => s.joined);
   const squadRoom = useMp((s) => s.room);
   const squadPeerCount = useMp((s) => s.peers.length);
@@ -119,6 +120,7 @@ export default function HUD({
   const narrow = useNarrow();
   const fpvActive = cameraMode === "fpv" && phase === "flight";
   const [panel, setPanel] = useState<"none" | "settings" | "squad">("none");
+  const [, bump] = useState(0);
   useTelemetry(phase === "flight");
 
   // R toggles the reward rings + guide path.
@@ -130,13 +132,15 @@ export default function HUD({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // V swaps chase / FPV goggle view.
+  // One-shot keys: V view (chase/FPV), M flight mode, X flip trick.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== "KeyV" || e.repeat) return;
+      if (e.repeat) return;
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")) return;
-      useSettings.getState().set({ cameraMode: useSettings.getState().cameraMode === "fpv" ? "chase" : "fpv" });
+      if (e.code === "KeyV") toggleView();
+      else if (e.code === "KeyM") cycleFlightMode();
+      else if (e.code === "KeyX") requestFlip();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -192,7 +196,7 @@ export default function HUD({
               {flying
                 ? `${flight.speedKmh.toFixed(0)} km/h · alt ${flight.altitude.toFixed(1)} m${
                     flight.geofence ? " · GEOFENCE" : ""
-                  } · ⬢ ${cells.length}/${PICKUPS.length}${
+                  }${packsCollected > 0 ? ` · 🔋×${packsCollected}` : ""}${
                     rewardsEnabled
                       ? ` · ★ ${score} (${ringsPassed.length}/${REWARD_RINGS.length} · lap ${lap}${
                           lapStartMs !== null ? ` · ⏱ ${fmtLap(Date.now() - lapStartMs)}` : ""
@@ -216,11 +220,18 @@ export default function HUD({
                   : phase.charAt(0).toUpperCase() + phase.slice(1) + "…"}
             </div>
             {flying && <HullBar />}
+            {flying && <BatteryBar />}
+            {flying && <WindReadout />}
           </div>
         )}
         {fpvActive && (
           <div style={{ marginTop: 28, color: "#8cffb8", fontFamily: "ui-monospace, Menlo, Consolas, monospace" }}>
             <HullBar compact />
+            <WindReadout osd />
+            <div style={{ fontSize: 12, marginTop: 4 }}>
+              CAM {flight.camTilt < 0.02 ? "FWD" : `-${Math.round(flight.camTilt * 90)}°`} ·{" "}
+              {flightMode.toUpperCase()}
+            </div>
           </div>
         )}
 
@@ -346,7 +357,7 @@ export default function HUD({
         </button>
         <button
           type="button"
-          onClick={() => setSetting({ cameraMode: cameraMode === "fpv" ? "chase" : "fpv" })}
+          onClick={toggleView}
           title="Toggle chase / FPV goggle view (V)"
           style={{
             background: cameraMode === "fpv" ? "rgba(192,193,255,0.18)" : "none",
@@ -358,7 +369,43 @@ export default function HUD({
             padding: "4px 8px",
           }}
         >
-          🥽 {cameraMode === "fpv" ? "FPV" : "Chase"}
+          🥽 {cameraMode === "fpv" ? "FPV" : "Chase"} <span style={{ opacity: 0.55 }}>V</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            cycleCamTilt();
+            bump((n) => n + 1); // camTilt is mutable state — refresh the label now
+          }}
+          title="Tilt camera: forward → 45° → straight down (hold Q/E to fine-tune)"
+          style={{
+            background: flight.camTilt > 0.05 ? "rgba(192,193,255,0.18)" : "none",
+            border: "1px solid rgba(192,193,255,0.4)",
+            borderRadius: 8,
+            color: "#c0c1ff",
+            cursor: "pointer",
+            fontSize: 12,
+            padding: "4px 8px",
+          }}
+        >
+          📷 {flight.camTilt < 0.05 ? "fwd" : `${Math.round(flight.camTilt * 90)}°↓`}
+        </button>
+        <button
+          type="button"
+          onClick={cycleFlightMode}
+          title="Flight mode (M): Easy arcade · Angle real physics · Acro full flips"
+          style={{
+            background: flightMode !== "easy" ? "rgba(255,209,102,0.16)" : "none",
+            border: "1px solid rgba(255,209,102,0.4)",
+            borderRadius: 8,
+            color: "#ffd166",
+            cursor: "pointer",
+            fontSize: 12,
+            padding: "4px 8px",
+          }}
+        >
+          🎮 {flightMode === "easy" ? "Easy" : flightMode === "angle" ? "Angle" : "Acro"}{" "}
+          <span style={{ opacity: 0.55 }}>M</span>
         </button>
         <button
           type="button"
@@ -437,8 +484,10 @@ export default function HUD({
       >
         {flying
           ? narrow
-            ? "Sticks fly · 🍅 drops · ★ rings · 🏀 G"
-            : "W/S ↑↓ · A/D yaw · ←→↑↓ fly · Shift sport · R rings · T 🍅 · G 🏀 · V FPV · Esc land"
+            ? "Sticks fly · V view · X flip · M mode · 📷 cam"
+            : flightMode === "acro"
+              ? "Acro: ↑↓ pitch · ←→ roll · A/D yaw · W throttle · S cut · V view · Q/E cam · M mode · G 🏀 · Esc land"
+              : "W/S ↑↓ · A/D yaw · ←→↑↓ fly · Shift sport · X flip · V view · Q/E cam · M mode · G 🏀 · T 🍅 · Esc land"
           : "WASD nudge the hovering drone · hold F or the button to fly"}
       </div>
 
@@ -451,6 +500,30 @@ export default function HUD({
       <HullFlash />
       <Toasts />
       {touchActive(touchMode) && <TouchSticks />}
+      {/* flip trick (mouse + touch) — Easy/Angle only; Acro flips by stick */}
+      {flying && flightMode !== "acro" && (
+        <button
+          type="button"
+          onPointerDown={() => requestFlip()}
+          title="Flip! (X) — backflip; hold ↑ for a front flip, ←/→ for a roll"
+          style={{
+            position: "absolute",
+            bottom: 340,
+            right: 90,
+            pointerEvents: "auto",
+            width: 52,
+            height: 52,
+            borderRadius: "50%",
+            border: "2px solid rgba(192,193,255,0.55)",
+            background: "rgba(12,19,36,0.72)",
+            fontSize: 22,
+            cursor: "pointer",
+            backdropFilter: "blur(6px)",
+          }}
+        >
+          🔄
+        </button>
+      )}
       {/* basketball release button (mouse + touch) — dims + relabels when
           you're not holding it, so "nothing happens" reads as "go get the
           ball" instead of "the button is broken". */}

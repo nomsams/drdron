@@ -4,6 +4,7 @@ import { flight } from "@/state/flight";
 import { HP_MAX } from "@/config/hull";
 import { useHull } from "@/state/hull";
 import { useToasts } from "@/state/toasts";
+import { wind, windFromLabel } from "@/state/wind";
 
 // HP bar (read live from flight.hp — the HUD already re-renders at 5 Hz while
 // flying), a red edge flash on hits / teal flash on repairs, and the event
@@ -40,6 +41,67 @@ export function HullBar({ compact = false }: { compact?: boolean }) {
       <span style={{ minWidth: 26, textAlign: "right" }}>{hp}</span>
       {flight.repairing && <span style={{ color: "#4edea3" }}>🔧 repairing…</span>}
       <style>{`@keyframes flyjs-hp-blink { 50% { opacity: 0.4; } }`}</style>
+    </div>
+  );
+}
+
+/** Flight battery bar for the chase-view HUD (FPV has its own OSD gauge).
+ *  Battery packs on the island recharge it. */
+export function BatteryBar() {
+  const frac = Math.max(0, Math.min(1, flight.battery));
+  const pct = Math.round(frac * 100);
+  const color = frac > 0.2 ? "#8cc8ff" : frac > 0.1 ? "#ffd166" : "#ff5a5a";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginTop: 4 }}>
+      <span style={{ fontWeight: 700, opacity: 0.8, width: 18 }}>🔋</span>
+      <span
+        style={{
+          position: "relative",
+          width: 140,
+          height: 8,
+          borderRadius: 4,
+          background: "rgba(255,255,255,0.12)",
+          overflow: "hidden",
+          animation: frac <= 0.2 ? "flyjs-hp-blink 0.8s steps(2) infinite" : undefined,
+        }}
+      >
+        <span style={{ position: "absolute", inset: 0, width: `${pct}%`, background: color, transition: "width 200ms" }} />
+      </span>
+      <span style={{ minWidth: 26, textAlign: "right" }}>{pct}%</span>
+    </div>
+  );
+}
+
+/** Wind: speed, where it comes from, and an arrow showing where it blows
+ *  RELATIVE TO YOUR NOSE (up = pushing you forward, right = pushing you
+ *  right) — the thing you actually need to correct for. */
+export function WindReadout({ osd = false }: { osd?: boolean }) {
+  if (wind.speed < 0.2) {
+    return (
+      <div style={{ fontSize: 12, marginTop: 4, opacity: 0.6 }}>{osd ? "WIND CALM" : "💨 calm"}</div>
+    );
+  }
+  const h = flight.heading;
+  const wf = (wind.x * -Math.sin(h) + wind.z * -Math.cos(h)) / wind.speed; // along nose
+  const wr = (wind.x * Math.cos(h) + wind.z * -Math.sin(h)) / wind.speed; // to the right
+  const angle = Math.atan2(wr, wf);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginTop: 4 }}>
+      <span style={{ width: 18 }}>{osd ? "WIND" : "💨"}</span>
+      <span
+        style={{
+          display: "inline-block",
+          transform: `rotate(${angle}rad)`,
+          transition: "transform 300ms",
+          fontWeight: 700,
+        }}
+      >
+        ↑
+      </span>
+      <span>
+        {wind.speed.toFixed(1)} m/s from {windFromLabel(wind.dir)}
+        {wind.gust > 0.25 ? " · gusting" : ""}
+      </span>
     </div>
   );
 }

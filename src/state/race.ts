@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { flight, useFlightStore } from "@/state/flight";
 import { heightAt } from "@/lib/terrain";
+import { wind } from "@/state/wind";
 import {
   BALL_AIR_DRAG,
   BALL_GRAVITY,
@@ -276,9 +277,9 @@ export function predictBallDrop(): BallDropPrediction | null {
   let scores = false;
   for (let i = 0; i < PREDICT_STEPS; i++) {
     vy -= BALL_GRAVITY * PREDICT_DT;
-    const drag = Math.max(0, 1 - BALL_AIR_DRAG * PREDICT_DT);
-    vx *= drag;
-    vz *= drag;
+    const drag = 1 - Math.exp(-BALL_AIR_DRAG * PREDICT_DT);
+    vx += (wind.x - vx) * drag;
+    vz += (wind.z - vz) * drag;
     prevY = y;
     x += vx * PREDICT_DT;
     y += vy * PREDICT_DT;

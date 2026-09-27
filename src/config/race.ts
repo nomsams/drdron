@@ -35,8 +35,9 @@ export const BALL_GRAVITY = 15;
 export const BALL_RESTITUTION = 0.55;
 /** Horizontal speed retained per bounce (rolling friction). */
 export const BALL_BOUNCE_FRICTION = 0.72;
-/** Per-second horizontal air drag while loose. */
-export const BALL_AIR_DRAG = 0.15;
+/** Per-second horizontal air drag while loose, toward the wind's velocity
+ *  (so a crosswind drifts the shot a metre or so on a long drop). */
+export const BALL_AIR_DRAG = 0.25;
 /** Carry position: this far below the drone, and this far ahead along its
  *  facing direction (world-space, computed from flight.heading each frame). */
 export const BALL_CARRY_DOWN = 0.95;

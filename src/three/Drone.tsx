@@ -16,6 +16,8 @@ import {
   PAD_REPAIR_PER_SEC,
 } from "@/config/hull";
 import { predictedRemote, remoteStates } from "@/net/mp";
+import { updateWind } from "@/state/wind";
+import { finishAttitude, stepFlight, updateSticks, type Sticks } from "@/lib/flightModel";
 import ProceduralDrone from "./ProceduralDrone";
 import { birdMarks, knockBird } from "./world/Birds";
 
@@ -35,18 +37,9 @@ export const OWN_BODY_LAYER = 1;
 
 const LAUNCH_DURATION = 2.6;
 
-const BASE_SPEED = 0.15;
-const FWD_FACTOR = 60;
-const STRAFE_FACTOR = 45;
-const VERT_FACTOR = 35;
-const SPORT_MULTIPLIER = 1.8;
-const VEL_LERP = 3.5;
-const TILT_AMOUNT = 0.25;
-const ROLL_AMOUNT = 0.35;
-const TILT_LERP = 5;
-const YAW_SPEED = 1.8;
-const YAW_LERP = 4;
-const YAW_BANK = 0.18;
+/** Virtual stick positions (Angle/Acro) — see flightModel.updateSticks. */
+const sticks: Sticks = { forward: 0, strafe: 0, vertical: 0, yaw: 0 };
+
 
 // Battery: a fresh pack every takeoff, ~5 min to empty at a gentle hover,
 // faster under throttle/sport. Cosmetic + a forced landing at 0% (mirrors a
@@ -164,6 +157,10 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
         flight.pos.copy(spawnPos);
         flight.vel.set(0, 0, 0);
         flight.heading = 0;
+        flight.pitch = 0;
+        flight.roll = 0;
+        flight.quat.identity();
+        flight.angVel.set(0, 0, 0);
         setPhase("flight");
       }
       return;
@@ -203,35 +200,26 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
       return;
     }
 
-    // phase === "flight": full physics
-    const throttleF = (keys.forward ? 1 : 0) - (keys.back ? 1 : 0);
-    const throttleS = (keys.strafeRight ? 1 : 0) - (keys.strafeLeft ? 1 : 0);
-    const throttleY = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
-    const yawInput = (keys.yawLeft ? 1 : 0) - (keys.yawRight ? 1 : 0);
+    // phase === "flight": full physics (src/lib/flightModel.ts)
+    const raw = {
+      forward: (keys.forward ? 1 : 0) - (keys.back ? 1 : 0),
+      strafe: (keys.strafeRight ? 1 : 0) - (keys.strafeLeft ? 1 : 0),
+      vertical: (keys.up ? 1 : 0) - (keys.down ? 1 : 0),
+      yaw: (keys.yawLeft ? 1 : 0) - (keys.yawRight ? 1 : 0),
+    };
     flight.sport = keys.sport;
 
-    const speedMul = flight.sport ? SPORT_MULTIPLIER : 1;
-    const sens = useSettings.getState().sensitivity;
-    const tvF = throttleF * BASE_SPEED * FWD_FACTOR * speedMul * sens;
-    const tvS = throttleS * BASE_SPEED * STRAFE_FACTOR * speedMul * sens;
-    const tvY = throttleY * BASE_SPEED * VERT_FACTOR * speedMul * sens;
-
-    flight.yawRate = THREE.MathUtils.lerp(flight.yawRate, yawInput * YAW_SPEED * sens, dt * YAW_LERP);
-    flight.heading += flight.yawRate * dt;
-
-    const h = flight.heading;
-    const fwdX = -Math.sin(h);
-    const fwdZ = -Math.cos(h);
-    const rightX = Math.cos(h);
-    const rightZ = -Math.sin(h);
-
+    const settings = useSettings.getState();
+    const mode = settings.flightMode;
+    // Easy keeps its crisp on/off feel; Angle/Acro get virtual stick travel
+    // (tap = small correction, hold = full deflection) — see updateSticks.
+    updateSticks(sticks, raw, dt);
+    const input = { ...(mode === "easy" ? raw : sticks), sport: flight.sport, sens: settings.sensitivity };
+    const w = updateWind();
     const vel = flight.vel;
-    vel.x = THREE.MathUtils.lerp(vel.x, fwdX * tvF + rightX * tvS, dt * VEL_LERP);
-    vel.z = THREE.MathUtils.lerp(vel.z, fwdZ * tvF + rightZ * tvS, dt * VEL_LERP);
-    vel.y = THREE.MathUtils.lerp(vel.y, tvY, dt * VEL_LERP);
-
     const pos = flight.pos;
-    pos.addScaledVector(vel, dt);
+    stepFlight(mode, flight, input, w, dt);
+
 
     // Geofence: soft inward push past the soft radius.
     const r = Math.hypot(pos.x, pos.z);
@@ -331,13 +319,10 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
       }
     }
 
-    const targetPitch = -throttleF * TILT_AMOUNT;
-    const targetRoll = -throttleS * ROLL_AMOUNT + flight.yawRate * YAW_BANK;
-    flight.pitch = THREE.MathUtils.lerp(flight.pitch, targetPitch, dt * TILT_LERP);
-    flight.roll = THREE.MathUtils.lerp(flight.roll, targetRoll, dt * TILT_LERP);
+    finishAttitude(mode, flight, input, dt);
 
     g.position.copy(pos);
-    g.rotation.set(flight.pitch, flight.heading, flight.roll);
+    g.quaternion.copy(flight.quat);
 
     const speed = vel.length();
     flight.speedKmh = speed * 3.6;
@@ -353,7 +338,7 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
     if (flight.repairing) repairHull(PAD_REPAIR_PER_SEC * dt, { quiet: true });
     flight.propSpin = Math.min(1, 0.55 + speed / 25);
     flight.throttleTotal =
-      Math.abs(throttleF) + Math.abs(throttleS) + Math.abs(throttleY) + Math.abs(yawInput) * 0.5;
+      Math.abs(input.forward) + Math.abs(input.strafe) + Math.abs(input.vertical) + Math.abs(input.yaw) * 0.5;
     engineAudio.setHum(1);
     engineAudio.setThrottle(flight.throttleTotal * (flight.sport ? 1.4 : 1));
 

@@ -9,7 +9,7 @@
 
 import * as THREE from "three";
 import { createNoise2D } from "simplex-noise";
-import { WORLD, POND, PAD, BEACH, MOUNTAIN, WATERFALL } from "@/config/world";
+import { WORLD, POND, PAD, BEACH, MOUNTAIN, WATERFALL, WINDSOCKS, WINDSOCK_POLE_H } from "@/config/world";
 import { P } from "@/lib/palette";
 
 // Deterministic PRNG so the island is identical on every visit/build.
@@ -228,6 +228,14 @@ export function getWorldData(counts: ScatterCounts): WorldData {
     // Solid landmarks: route around, not over. Both are rock.
     { x: MOUNTAIN.x, z: MOUNTAIN.z, r: MOUNTAIN.r, top: heightAt(MOUNTAIN.x, MOUNTAIN.z) + 40, kind: "rock" },
     { x: WATERFALL.x, z: WATERFALL.z, r: WATERFALL.r, top: heightAt(WATERFALL.x, WATERFALL.z) + 8, kind: "rock" },
+    // Windsock poles (steel — hits count as rock).
+    ...WINDSOCKS.map((w) => ({
+      x: w.x,
+      z: w.z,
+      r: 0.2,
+      top: heightAt(w.x, w.z) + WINDSOCK_POLE_H,
+      kind: "rock" as const,
+    })),
   ];
 
   const data: WorldData = { trees, rocks, grass, colliders };

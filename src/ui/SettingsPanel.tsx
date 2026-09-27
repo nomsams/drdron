@@ -1,6 +1,6 @@
 "use client";
 
-import { useSettings, type TouchMode } from "@/state/settings";
+import { useSettings, type FlightMode, type TouchMode, type WindLevel } from "@/state/settings";
 
 // Settings panel: every ambient/feature system toggleable for performance,
 // plus sensitivity and touch mode. Persisted to localStorage.
@@ -67,6 +67,28 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           ✕
         </button>
       </div>
+      <Row label="Flight mode" hint="M key cycles · X flips (Easy/Angle)">
+        <select
+          value={s.flightMode}
+          onChange={(e) => s.set({ flightMode: e.target.value as FlightMode })}
+          style={{ background: "#1a2440", color: "#e8eaf6", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", padding: "4px 6px", fontSize: 12 }}
+        >
+          <option value="easy">Easy (arcade)</option>
+          <option value="angle">Angle (real physics)</option>
+          <option value="acro">Acro (full flips)</option>
+        </select>
+      </Row>
+      <Row label="Wind" hint="drifts drone + ball; windsocks show it">
+        <select
+          value={s.wind}
+          onChange={(e) => s.set({ wind: e.target.value as WindLevel })}
+          style={{ background: "#1a2440", color: "#e8eaf6", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", padding: "4px 6px", fontSize: 12 }}
+        >
+          <option value="off">Off</option>
+          <option value="light">Light</option>
+          <option value="strong">Strong</option>
+        </select>
+      </Row>
       <Row label="Birds" hint="flock over the pond">
         <Toggle value={s.birds} onChange={(v) => s.set({ birds: v })} />
       </Row>

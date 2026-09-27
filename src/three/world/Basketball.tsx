@@ -24,6 +24,7 @@ import {
   useRace,
 } from "@/state/race";
 import { flight, useFlightStore } from "@/state/flight";
+import { wind } from "@/state/wind";
 
 // The basketball: a single persistent ball (not a consumable, unlike
 // tomatoes) that's either `carried` (riding under the drone, physics
@@ -85,12 +86,13 @@ export default function Basketball() {
       ball.py = ball.y;
       ball.vx = ball.vy = ball.vz = 0;
     } else {
-      // Loose: arcade gravity + drag.
+      // Loose: arcade gravity + air drag toward the wind (a crosswind
+      // carries the shot — the predictor arc accounts for it).
       ball.py = ball.y;
       ball.vy -= BALL_GRAVITY * dt;
-      const drag = Math.max(0, 1 - BALL_AIR_DRAG * dt);
-      ball.vx *= drag;
-      ball.vz *= drag;
+      const drag = 1 - Math.exp(-BALL_AIR_DRAG * dt);
+      ball.vx += (wind.x - ball.vx) * drag;
+      ball.vz += (wind.z - ball.vz) * drag;
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
       ball.z += ball.vz * dt;

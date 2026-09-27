@@ -5,6 +5,7 @@ import { flight, useFlightStore } from "@/state/flight";
 import { useSettings } from "@/state/settings";
 import { useMp } from "@/state/mp";
 import { PAD, WORLD } from "@/config/world";
+import FpvInstruments from "./FpvInstruments";
 
 // FPV goggle chrome: a digital-FPV-style OSD (on-screen display) over the
 // rigid nose-cam view from ChaseCamera's fpv branch — vignette + scanlines
@@ -76,6 +77,9 @@ export default function FpvOverlay() {
             "repeating-linear-gradient(0deg, rgba(0,0,0,0.9) 0px, rgba(0,0,0,0.9) 1px, transparent 1px, transparent 3px)",
         }}
       />
+
+      {/* Artificial horizon + pitch ladder + compass tape (canvas, per frame). */}
+      <FpvInstruments />
 
       {/* Center reticle. */}
       <div

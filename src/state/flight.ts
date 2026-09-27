@@ -51,6 +51,21 @@ export const flight = {
   downed: false,
   /** Hovering low over the helipad, being repaired (HUD hint). */
   repairing: false,
+  /** Camera tilt, 0 = looking forward → 1 = looking straight down (Q/E,
+   *  HUD 📷 button). Kept across flights — it's a viewing preference. */
+  camTilt: 0,
+  /** Full 3D orientation — what's rendered and what the cameras follow.
+   *  Easy/Angle modes build it from heading/pitch/roll (+ a flip trick);
+   *  Acro integrates it directly from stick rates (it can go anywhere,
+   *  loops included) and derives heading/pitch/roll back from it. */
+  quat: new THREE.Quaternion(),
+  /** Acro body angular velocity (rad/s): x pitch, y yaw, z roll. */
+  angVel: new THREE.Vector3(),
+  /** Flip trick progress (Easy/Angle, X key): 0 = idle, else 0→1. */
+  flipT: 0,
+  /** Body axis the flip spins about, and direction (+1/−1). */
+  flipAxis: "x" as "x" | "z",
+  flipSign: 1,
 };
 
 export function resetFlight() {
@@ -72,6 +87,9 @@ export function resetFlight() {
   flight.hp = HP_MAX;
   flight.downed = false;
   flight.repairing = false;
+  flight.quat.identity();
+  flight.angVel.set(0, 0, 0);
+  flight.flipT = 0;
 }
 
 /** Raw key state, written by useFlightControls, read by physics. */
@@ -85,6 +103,9 @@ export const keys = {
   up: false,
   down: false,
   sport: false,
+  /** Hold to tilt the camera up (toward forward) / down (toward straight down). */
+  camUp: false,
+  camDown: false,
 };
 
 export function resetKeys() {
@@ -99,10 +120,9 @@ interface FlightStore {
   setPhase: (phase: FlightPhase) => void;
   soundEnabled: boolean;
   toggleSound: () => void;
-  /** Collected pickup ids. */
-  cells: string[];
-  collectCell: (id: string) => void;
-  resetCells: () => void;
+  /** Battery packs picked up this session (HUD counter). */
+  packsCollected: number;
+  collectPack: () => void;
   // -- Reward ring challenge (toggleable, score per session) --
   rewardsEnabled: boolean;
   toggleRewards: () => void;
@@ -136,12 +156,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   setPhase: (phase) => set({ phase }),
   soundEnabled: true,
   toggleSound: () => set((s) => ({ soundEnabled: !s.soundEnabled })),
-  cells: [],
-  collectCell: (id) => {
-    if (get().cells.includes(id)) return;
-    set({ cells: [...get().cells, id] });
-  },
-  resetCells: () => set({ cells: [] }),
+  packsCollected: 0,
+  collectPack: () => set((s) => ({ packsCollected: s.packsCollected + 1 })),
   rewardsEnabled: true,
   toggleRewards: () =>
     set((s) => ({
@@ -190,22 +206,24 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Pickup registry: pickups register themselves; a small interval in
-// Pickups.tsx checks distances. No per-frame React work.
+// Battery packs (the glowing green cells on the island): which are taken and
+// until when. Plain module state so the minimap can read it; Pickups.tsx
+// does the 10 Hz proximity check and the recharge.
 
-export interface Pickup {
-  id: string;
-  position: [number, number, number];
-  radius: number;
+const packDownUntil = new Map<string, number>();
+
+export function isPackDown(id: string): boolean {
+  const until = packDownUntil.get(id);
+  if (until === undefined) return false;
+  if (Date.now() >= until) {
+    packDownUntil.delete(id);
+    return false;
+  }
+  return true;
 }
 
-export const pickups = new Map<string, Pickup>();
-
-export function registerPickup(item: Pickup): () => void {
-  pickups.set(item.id, item);
-  return () => {
-    pickups.delete(item.id);
-  };
+export function takePack(id: string, respawnMs: number): void {
+  packDownUntil.set(id, Date.now() + respawnMs);
 }
 
 // Hero UI can request takeoff without reaching into DroneExperience.
@@ -225,6 +243,5 @@ if (typeof window !== "undefined" && import.meta.env.DEV) {
     useFlightStore,
     flight,
     keys,
-    pickups,
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { flight, useFlightStore } from "@/state/flight";
+import { flight, isPackDown, useFlightStore } from "@/state/flight";
 import { remoteStates } from "@/net/mp";
 import { birdMarks } from "@/three/world/Birds";
 import { BEACH, PAD, PICKUPS, REWARD_RINGS, WORLD } from "@/config/world";
@@ -9,6 +9,7 @@ import { TOMATO_TARGETS } from "@/config/tomato";
 import { isTargetDown, useTomato } from "@/state/tomato";
 import { ball, useRace } from "@/state/race";
 import { REPAIR_KITS } from "@/config/hull";
+import { wind } from "@/state/wind";
 import { isKitDown } from "@/state/hull";
 import { useNarrow } from "@/hooks/useNarrow";
 import { heightAt } from "@/lib/terrain";
@@ -100,7 +101,7 @@ export default function Minimap() {
       }
       // Pickups (uncollected).
       for (const c of PICKUPS) {
-        if (st.cells.includes(c.id)) continue;
+        if (isPackDown(c.id)) continue;
         const [x, y] = toPx(c.x, c.z);
         ctx.fillStyle = "#4edea3";
         ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
@@ -149,6 +150,27 @@ export default function Minimap() {
       for (const m of birdMarks) {
         const [x, y] = toPx(m.x, m.z);
         ctx.fillRect(x - 1, y - 1, 2, 2);
+      }
+      // Wind arrow, top-left corner (north-up, absolute): where it blows.
+      if (wind.speed > 0.2) {
+        const cx = 14;
+        const cy = 14;
+        const len = 5 + Math.min(1, wind.speed / 8) * 5;
+        const ux = Math.cos(wind.dir);
+        const uz = Math.sin(wind.dir);
+        ctx.strokeStyle = "rgba(232,234,246,0.9)";
+        ctx.fillStyle = "rgba(232,234,246,0.9)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(cx - ux * len, cy - uz * len);
+        ctx.lineTo(cx + ux * len, cy + uz * len);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx + ux * (len + 2), cy + uz * (len + 2));
+        ctx.lineTo(cx + ux * (len - 3) - uz * 3, cy + uz * (len - 3) + ux * 3);
+        ctx.lineTo(cx + ux * (len - 3) + uz * 3, cy + uz * (len - 3) - ux * 3);
+        ctx.closePath();
+        ctx.fill();
       }
       // Drone triangle, rotated by heading (0 = north/up).
       const [dx, dy] = toPx(flight.pos.x, flight.pos.z);

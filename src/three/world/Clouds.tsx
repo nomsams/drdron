@@ -3,6 +3,7 @@
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
+import { wind } from "@/state/wind";
 
 // Drifting clouds: a handful of flattened white puffs circling high above
 // the island. Unlit + transparent, one useFrame for all. Toggle in settings.
@@ -36,10 +37,16 @@ export default function Clouds({ count = 8 }: { count?: number }) {
     const g = group.current;
     if (!g) return;
     const dt = Math.min(dtRaw, 0.1);
+    // A slow base drift plus the wind (clouds sit higher, so they ride it
+    // a bit faster than it blows at the surface — the sky shows the weather).
     g.children.forEach((child, i) => {
       const p = puffs[i];
-      child.position.x += p.speed * dt;
+      child.position.x += (p.speed * 0.4 + wind.x * 0.8) * dt;
+      child.position.z += wind.z * 0.8 * dt;
       if (child.position.x > 85) child.position.x = -85;
+      else if (child.position.x < -85) child.position.x = 85;
+      if (child.position.z > 85) child.position.z = -85;
+      else if (child.position.z < -85) child.position.z = 85;
     });
   });
 

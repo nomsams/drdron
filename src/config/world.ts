@@ -21,7 +21,11 @@ export const PAD = { x: 0, z: 20, r: 7, rim: 4, h: 0.4 } as const;
 
 export const SPAWN = { x: 0, z: 20, hover: 2.2 } as const;
 
-/** Generic collectible pickups (exploration easter egg, no CV meaning). */
+/** Battery packs (the glowing green cells): fly through one to recharge the
+ *  flight battery. Only consumed when you're not already full; respawn. */
+export const BATTERY_PACK_CHARGE = 0.3;
+export const BATTERY_PACK_RESPAWN_MS = 40000;
+export const BATTERY_PACK_RADIUS = 1.8;
 export const PICKUPS: { id: string; x: number; z: number; yOffset: number }[] = [
   { id: "cell-1", x: 48, z: 14, yOffset: 3 },
   { id: "cell-2", x: 40, z: -34, yOffset: 4 },
@@ -30,6 +34,14 @@ export const PICKUPS: { id: string; x: number; z: number; yOffset: number }[] = 
   { id: "cell-5", x: -52, z: 4, yOffset: 4.5 },
   { id: "cell-6", x: -36, z: 40, yOffset: 3 },
 ];
+
+/** Windsocks: airfield-style poles showing wind direction + strength. The
+ *  poles are solid (crash into one and it counts as a rock). */
+export const WINDSOCKS: { id: string; x: number; z: number }[] = [
+  { id: "ws-pad", x: -8, z: 26 }, // at the helipad, where you take off
+  { id: "ws-beach", x: 52, z: 36 }, // on the beach
+];
+export const WINDSOCK_POLE_H = 5.5;
 
 /** Environmental set-pieces. */
 export const MOUNTAIN = { x: 20, z: -58, r: 9 } as const;
