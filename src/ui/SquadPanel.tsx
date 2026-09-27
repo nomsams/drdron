@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { PILOT_COLORS, useMp } from "@/state/mp";
 import { useTomato } from "@/state/tomato";
-import { joinSquad, leaveSquad, mpSelfId, normalizeRoomCode, randomRoomCode } from "@/net/mp";
+import { joinSquad, leaveSquad, mpSelfId, normalizeRoomCode, randomRoomCode, retrySquad } from "@/net/mp";
+import { useRace } from "@/state/race";
 
 // Squad panel: P2P multiplayer via room codes. No account, no server —
 // pilots exchange a 4-letter code (or invite link) and connect directly.
@@ -16,7 +17,11 @@ export default function SquadPanel({ onClose }: { onClose: () => void }) {
   const joined = useMp((s) => s.joined);
   const peers = useMp((s) => s.peers);
   const transportCount = useMp((s) => s.transportCount);
+  const linkStatus = useMp((s) => s.linkStatus);
+  const lastError = useMp((s) => s.lastError);
   const localTomatoHits = useTomato((s) => s.hits);
+  const localRaceHoop = useRace((s) => s.hoopIndex);
+  const localRaceLaps = useRace((s) => s.laps);
   const setProfile = useMp((s) => s.setProfile);
   const [code, setCode] = useState(room ?? "");
   const [copied, setCopied] = useState(false);
@@ -257,17 +262,77 @@ export default function SquadPanel({ onClose }: { onClose: () => void }) {
               Leave
             </button>
           </div>
+          {(linkStatus === "degraded" || linkStatus === "error") && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 6,
+                padding: "6px 8px",
+                borderRadius: 8,
+                background: "rgba(255,90,90,0.12)",
+                border: "1px solid rgba(255,90,90,0.35)",
+              }}
+            >
+              <span style={{ fontSize: 11, flex: 1, color: "#ff9a9a" }}>
+                {linkStatus === "error"
+                  ? `Couldn't reach a relay${lastError ? `: ${lastError}` : ""}.`
+                  : "No relay response yet — check network/firewall (WebRTC needs UDP)."}
+              </span>
+              <button
+                type="button"
+                onClick={() => retrySquad()}
+                style={{
+                  padding: "3px 8px",
+                  borderRadius: 6,
+                  border: "1px solid rgba(255,154,154,0.5)",
+                  background: "none",
+                  color: "#ff9a9a",
+                  cursor: "pointer",
+                  fontSize: 11,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
           <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 4 }}>
             {searching
               ? transportCount > 0
                 ? `Linking… ${transportCount} connected, waiting for flight data…`
-                : "Share the code — waiting for pilots…"
+                : linkStatus === "connecting"
+                  ? "Share the code — waiting for pilots…"
+                  : linkStatus === "degraded"
+                    ? "Waiting for pilots (relay is slow to respond)…"
+                    : "Share the code — waiting for pilots…"
               : `In this sky (${peers.length + 1}):`}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 140, overflowY: "auto" }}>
-            <RosterRow name={`${name.trim() || "Pilot"} (you)`} color={color} score={-1} lap={-1} flying={false} tomatoHits={localTomatoHits} self />
+            <RosterRow
+              name={`${name.trim() || "Pilot"} (you)`}
+              color={color}
+              score={-1}
+              lap={-1}
+              flying={false}
+              tomatoHits={localTomatoHits}
+              raceHoop={localRaceHoop}
+              raceLaps={localRaceLaps}
+              self
+            />
             {peers.map((p) => (
-              <RosterRow key={p.id} name={p.name} color={p.color} score={p.score} lap={p.lap} flying={p.flying} tomatoHits={p.tomatoHits} />
+              <RosterRow
+                key={p.id}
+                name={p.name}
+                color={p.color}
+                score={p.score}
+                lap={p.lap}
+                flying={p.flying}
+                tomatoHits={p.tomatoHits}
+                raceHoop={p.raceHoop}
+                raceLaps={p.raceLaps}
+              />
             ))}
           </div>
           <div style={{ fontSize: 11, opacity: 0.5, marginTop: 6 }}>
@@ -282,26 +347,34 @@ export default function SquadPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function RosterRow({ name, color, score, lap, flying, tomatoHits, self }: {
+function RosterRow({ name, color, score, lap, flying, tomatoHits, raceHoop, raceLaps, self }: {
   name: string;
   color: string;
   score: number;
   lap: number;
   flying: boolean;
   tomatoHits: number;
+  raceHoop?: number;
+  raceLaps?: number;
   self?: boolean;
 }) {
+  const raceTag =
+    raceLaps || raceHoop
+      ? ` · 🏀 ${(raceLaps ?? 0) > 0 ? `lap ${raceLaps}` : `hoop ${(raceHoop ?? 0) + 1}`}`
+      : "";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
       <span style={{ width: 10, height: 10, borderRadius: "50%", background: color, flexShrink: 0 }} />
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
       {self ? (
         <span style={{ opacity: 0.6 }}>
-          {tomatoHits > 0 ? `🍅 ${tomatoHits} · you` : "you"}
+          {tomatoHits > 0 ? `🍅 ${tomatoHits} · ` : ""}
+          {"you"}
+          {raceTag}
         </span>
       ) : (
         <span style={{ opacity: 0.75 }}>
-          ★ {score} · lap {lap}{flying ? " · ✈" : " · 🛬"}{tomatoHits > 0 ? ` · 🍅 ${tomatoHits}` : ""}
+          ★ {score} · lap {lap}{flying ? " · ✈" : " · 🛬"}{tomatoHits > 0 ? ` · 🍅 ${tomatoHits}` : ""}{raceTag}
         </span>
       )}
     </div>

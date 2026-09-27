@@ -9,6 +9,7 @@ import { persist } from "zustand/middleware";
 // (rings keep their own HUD toggle + R key).
 
 export type TouchMode = "auto" | "on" | "off";
+export type CameraMode = "chase" | "fpv";
 
 interface SettingsState {
   birds: boolean;
@@ -22,6 +23,8 @@ interface SettingsState {
   touch: TouchMode;
   /** Control sensitivity multiplier, 0.5..2. */
   sensitivity: number;
+  /** Chase (third-person) or FPV (goggle-style first-person). */
+  cameraMode: CameraMode;
   set: (patch: Partial<SettingsState>) => void;
   reset: () => void;
 }
@@ -37,6 +40,7 @@ const DEFAULTS = {
   fireflies: true,
   touch: "auto" as TouchMode,
   sensitivity: 1,
+  cameraMode: "chase" as CameraMode,
 };
 
 export const useSettings = create<SettingsState>()(

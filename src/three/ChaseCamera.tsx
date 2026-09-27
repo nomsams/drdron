@@ -4,11 +4,14 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import { flight, useFlightStore } from "@/state/flight";
+import { useSettings } from "@/state/settings";
 import { IDLE_CAM } from "./Drone";
 import { cameraBus } from "./cameraBus";
 
 // Chase camera ported from upstream (MIT). Focus-mode branch removed —
- // the scaffold has no boards to focus on.
+ // the scaffold has no boards to focus on. An FPV branch was added below:
+ // a rigid goggle-style mount at the drone's nose, swapped in by the V key
+ // / HUD toggle (see FpvOverlay.tsx for the goggle chrome).
 
 const CHASE_OFFSET = new THREE.Vector3(0, 1.8, 5);
 const LOOK_OFFSET = new THREE.Vector3(0, 0.5, -2);
@@ -17,11 +20,21 @@ const SPORT_CHASE_LERP = 3.4;
 const BASE_FOV = 65;
 const SPORT_FOV = 72;
 
+// FPV: mounted at the nose, rigidly following the drone's actual attitude
+// (no lookAt smoothing — that's what makes a chase cam feel like a chase
+// cam). A small upward mount-tilt keeps the horizon roughly level during a
+// nose-down cruise, matching how real FPV cameras are angled on the frame.
+const FPV_OFFSET = new THREE.Vector3(0, 0.05, -0.62);
+const FPV_MOUNT_TILT = 0.32;
+const FPV_POS_LERP = 15;
+const FPV_FOV = 122;
+
 const IDLE_LOOK = new THREE.Vector3(IDLE_CAM.x, IDLE_CAM.y, 8);
 
 export default function ChaseCamera() {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const phase = useFlightStore((s) => s.phase);
+  const cameraMode = useSettings((s) => s.cameraMode);
 
   // Publish for DOM overlays (peer markers).
   useEffect(() => {
@@ -35,6 +48,7 @@ export default function ChaseCamera() {
   const tmpPos = useRef(new THREE.Vector3());
   const tmpLook = useRef(new THREE.Vector3());
   const shakeOffset = useRef(new THREE.Vector3());
+  const fpvEuler = useRef(new THREE.Euler(0, 0, 0, "YXZ"));
 
   useFrame((state, dtRaw) => {
     const dt = Math.min(dtRaw, 0.1);
@@ -43,6 +57,45 @@ export default function ChaseCamera() {
     const targetLook = tmpLook.current;
     let posLerp = 4;
     let targetFov = BASE_FOV;
+
+    if (phase === "flight" && cameraMode === "fpv") {
+      const h = flight.heading;
+      const cos = Math.cos(h);
+      const sin = Math.sin(h);
+      targetPos.set(
+        flight.pos.x + FPV_OFFSET.x * cos + FPV_OFFSET.z * sin,
+        flight.pos.y + FPV_OFFSET.y,
+        flight.pos.z - FPV_OFFSET.x * sin + FPV_OFFSET.z * cos
+      );
+      camera.position.lerp(targetPos, dt * FPV_POS_LERP);
+
+      if (flight.shake > 0.001) {
+        shakeOffset.current.set(
+          Math.sin(t * 61) * flight.shake * 0.25,
+          Math.cos(t * 47) * flight.shake * 0.2,
+          0
+        );
+        camera.position.add(shakeOffset.current);
+        flight.shake *= Math.exp(-dt * 6);
+      }
+
+      // Rigid mount: the camera's attitude IS the drone's attitude (plus a
+      // fixed up-tilt), not a smoothed look-at — that tight coupling is
+      // what reads as "goggles" instead of "chase cam, close up".
+      fpvEuler.current.set(flight.pitch + FPV_MOUNT_TILT, h, flight.roll, "YXZ");
+      camera.quaternion.setFromEuler(fpvEuler.current);
+
+      // Keep `look` sane (a point ahead of the camera) so a mode switch
+      // back to chase doesn't inherit a stale look-at target.
+      targetLook.set(0, 0, -10).applyEuler(fpvEuler.current).add(camera.position);
+      look.current.copy(targetLook);
+
+      if (Math.abs(camera.fov - FPV_FOV) > 0.05) {
+        camera.fov = THREE.MathUtils.lerp(camera.fov, FPV_FOV, dt * 3);
+        camera.updateProjectionMatrix();
+      }
+      return;
+    }
 
     if (phase === "idle" || phase === "charging") {
       targetPos.copy(IDLE_CAM);

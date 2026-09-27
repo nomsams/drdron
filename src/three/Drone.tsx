@@ -31,6 +31,11 @@ const YAW_SPEED = 1.8;
 const YAW_LERP = 4;
 const YAW_BANK = 0.18;
 
+// Battery: a fresh pack every takeoff, ~5 min to empty at a gentle hover,
+// faster under throttle/sport. Cosmetic + a forced landing at 0% (mirrors a
+// real FPV failsafe) — see the FPV goggle HUD for the readout.
+const BATTERY_DRAIN_PER_SEC = 1 / 300;
+
 function easeInOutCubic(t: number) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
@@ -42,6 +47,7 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
 
   const launch = useRef({ t: 0, from: new THREE.Vector3(), active: false });
   const crashCooldown = useRef(0);
+  const batteryLandTriggered = useRef(false);
   // Idle hover sits in front of the camera (which looks at IDLE_LOOK), so the
   // hero shot always shows the drone. Right of the copy on desktop, near
   // center on small screens. Launch arcs from here to the pad.
@@ -68,6 +74,7 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
       launch.current.t = 0;
       launch.current.from.copy(group.current.position);
       launch.current.active = true;
+      batteryLandTriggered.current = false;
     }
   }, [phase]);
 
@@ -233,6 +240,15 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
       Math.abs(throttleF) + Math.abs(throttleS) + Math.abs(throttleY) + Math.abs(yawInput) * 0.5;
     engineAudio.setHum(1);
     engineAudio.setThrottle(flight.throttleTotal * (flight.sport ? 1.4 : 1));
+
+    flight.flightElapsed += dt;
+    const drain =
+      BATTERY_DRAIN_PER_SEC * (0.55 + 0.9 * flight.throttleTotal) * (flight.sport ? 1.35 : 1);
+    flight.battery = Math.max(0, flight.battery - drain * dt);
+    if (flight.battery <= 0 && !batteryLandTriggered.current) {
+      batteryLandTriggered.current = true;
+      (window as unknown as { __flyjsLand?: () => void }).__flyjsLand?.();
+    }
   });
 
   return (

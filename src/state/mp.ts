@@ -16,7 +16,13 @@ export interface PeerInfo {
   /** Tomato bombing score / bullseyes (0 for older clients). */
   tomatoScore: number;
   tomatoHits: number;
+  /** Basketball race progress (0 for older clients / race mode off). */
+  raceHoop: number;
+  raceLaps: number;
 }
+
+/** P2P link health, surfaced in the Squad panel. */
+export type LinkStatus = "idle" | "connecting" | "connected" | "degraded" | "error";
 
 interface MpState {
   /** Display name shown above your drone. */
@@ -29,9 +35,14 @@ interface MpState {
   /** Transport-level WebRTC links (handshake done). May exceed `peers`
    *  briefly while first state packets are still in flight. */
   transportCount: number;
+  /** Relay/handshake health for the Squad panel status line. */
+  linkStatus: LinkStatus;
+  lastError: string | null;
   setProfile: (patch: { name?: string; color?: string }) => void;
   setSession: (patch: { room?: string | null; joined?: boolean }) => void;
   setTransportCount: (n: number) => void;
+  setLinkStatus: (status: LinkStatus) => void;
+  setLastError: (err: string | null) => void;
   upsertPeer: (peer: PeerInfo) => void;
   removePeer: (id: string) => void;
   clearPeers: () => void;
@@ -64,9 +75,13 @@ export const useMp = create<MpState>()(
       joined: false,
       peers: [],
       transportCount: 0,
+      linkStatus: "idle",
+      lastError: null,
       setProfile: (patch) => set(patch),
       setSession: (patch) => set(patch),
       setTransportCount: (n) => set({ transportCount: n }),
+      setLinkStatus: (status) => set({ linkStatus: status }),
+      setLastError: (err) => set({ lastError: err }),
       upsertPeer: (peer) =>
         set((s) => {
           const i = s.peers.findIndex((p) => p.id === peer.id);

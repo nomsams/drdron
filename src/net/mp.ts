@@ -6,16 +6,19 @@
 //
 // Protocol (action "s", 10 Hz broadcast):
 //   { v, id, p:[x,y,z], h, pi, ro, spin, f, name, color, score, lap,
-//     ts?, th? }  (ts/th = tomato score/hits, optional for backwards compat)
+//     ts?, th?, rh?, rl? }
+//   (ts/th = tomato score/hits, rh/rl = race hoop index/laps — all optional,
+//   for backwards compat with older clients that omit them)
 // Ephemeral drops (action "tom", sent on release, no resend):
 //   { v, p:[x,y,z] spawn, q:[x,y,z] velocity }
 // Incoming packets are validated + clamped; unknowns and over-cap peers are
 // dropped. Presence is derived from packets (roster) with a 4 s timeout.
 
-import { joinRoom, selfId, type Room } from "trystero";
+import { joinRoom, selfId, type Room, type RelayConfig, type TurnServerConfig } from "trystero";
 import { flight, useFlightStore } from "@/state/flight";
 import { useMp } from "@/state/mp";
 import { spawnRemoteTomato, useTomato } from "@/state/tomato";
+import { useRace } from "@/state/race";
 
 export { selfId as mpSelfId };
 export const MP_APP_ID = "flyjs-drone-v1";
@@ -25,6 +28,59 @@ const TOM_ACTION = "tom";
 const SEND_MS = 100;
 const SEEN_TIMEOUT_MS = 4000;
 const MAX_REMOTES = 7;
+/** Grace period after join before an empty transport counts as "degraded"
+ *  (vs. still connecting) — relays can take a couple seconds to answer. */
+const LINK_DEGRADED_AFTER_MS = 7000;
+
+// Curated relay set: trystero's own default list carries some relays that
+// are slow or offline (observed: chorus.pjv.me). These are commonly-used
+// public Nostr relays with a track record of uptime — picking a smaller,
+// known-good set means faster peer discovery instead of waiting out timeouts
+// on dead ones. `redundancy` queries several at once so one flaky relay
+// doesn't stall the handshake.
+const CURATED_RELAYS = [
+  "wss://relay.damus.io",
+  "wss://nos.lol",
+  "wss://relay.nostr.band",
+  "wss://nostr.wine",
+  "wss://offchain.pub",
+  "wss://relay.snort.social",
+  "wss://nostr.mom",
+  "wss://relay.primal.net",
+];
+
+const RELAY_CONFIG: RelayConfig = {
+  urls: CURATED_RELAYS,
+  redundancy: 4,
+  warnOnRelayFailure: true,
+};
+
+/**
+ * Optional TURN relay for strict NATs (symmetric NAT, locked-down corporate
+ * networks) where plain STUN can't punch through. Off by default — no TURN
+ * credentials ship with this project. To enable, set in `.env.local`:
+ *   VITE_TURN_URLS=turn:your-host:3478
+ *   VITE_TURN_USERNAME=...
+ *   VITE_TURN_CREDENTIAL=...
+ * (a free option: metered.ca's TURN tier). Multiple URLs: comma-separated.
+ */
+function turnConfigFromEnv(): TurnServerConfig[] | undefined {
+  try {
+    const raw = import.meta.env.VITE_TURN_URLS as string | undefined;
+    if (!raw) return undefined;
+    const urls = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    if (urls.length === 0) return undefined;
+    return [
+      {
+        urls,
+        username: import.meta.env.VITE_TURN_USERNAME as string | undefined,
+        credential: import.meta.env.VITE_TURN_CREDENTIAL as string | undefined,
+      },
+    ];
+  } catch {
+    return undefined;
+  }
+}
 
 export interface RemoteState {
   x: number;
@@ -42,6 +98,8 @@ export interface RemoteState {
   seen: number;
   tomatoScore: number;
   tomatoHits: number;
+  raceHoop: number;
+  raceLaps: number;
 }
 
 /** Live ghost states by peer id. Mutated outside React; RemotePilots reads it. */
@@ -147,6 +205,8 @@ function validPacket(d: unknown): Omit<RemoteState, "seen"> | null {
     // Optional (older clients omit them) — never NaN, never negative.
     tomatoScore: isNum(p.ts) ? Math.max(0, Math.floor(p.ts)) : 0,
     tomatoHits: isNum(p.th) ? Math.max(0, Math.floor(p.th)) : 0,
+    raceHoop: isNum(p.rh) ? Math.max(0, Math.floor(p.rh)) : 0,
+    raceLaps: isNum(p.rl) ? Math.max(0, Math.floor(p.rl)) : 0,
   };
 }
 
@@ -173,6 +233,7 @@ function buildPacket(): StatePacket {
   const phase = fs.phase;
   const name = mp.name.trim().slice(0, 24) || "Pilot";
   const tom = useTomato.getState();
+  const race = useRace.getState();
   return {
     v: 1,
     id: selfId,
@@ -188,6 +249,8 @@ function buildPacket(): StatePacket {
     lap: fs.lap,
     ts: tom.score,
     th: tom.hits,
+    rh: race.hoopIndex,
+    rl: race.laps,
   };
 }
 
@@ -203,28 +266,62 @@ function broadcastNow(): void {
 function refreshTransportCount(): void {
   try {
     const n = room ? Object.keys(room.getPeers()).length : 0;
-    useMp.getState().setTransportCount(n);
+    const mpState = useMp.getState();
+    mpState.setTransportCount(n);
+    if (n > 0 && mpState.linkStatus !== "connected") {
+      mpState.setLinkStatus("connected");
+    }
   } catch {
     /* ignore */
   }
 }
+
+let degradedCheck: ReturnType<typeof setTimeout> | null = null;
 
 export function joinSquad(code: string): void {
   const clean = normalizeRoomCode(code);
   if (!clean || clean === roomCode) return;
   leaveSquad();
   roomCode = clean;
+  const mpState = useMp.getState();
+  mpState.setLinkStatus("connecting");
+  mpState.setLastError(null);
   try {
-    room = joinRoom({ appId: MP_APP_ID }, `flyjs-${clean}`, {
-      onJoinError: (details) => {
-        console.warn(`[squad] join error in ${details.roomId}: ${details.error}`);
+    room = joinRoom(
+      {
+        appId: MP_APP_ID,
+        relayConfig: RELAY_CONFIG,
+        turnConfig: turnConfigFromEnv(),
       },
-    });
+      `flyjs-${clean}`,
+      {
+        onJoinError: (details) => {
+          console.warn(`[squad] join error in ${details.roomId}: ${details.error}`);
+          useMp.getState().setLastError(String(details.error));
+          if (useMp.getState().transportCount === 0) {
+            useMp.getState().setLinkStatus("degraded");
+          }
+        },
+      }
+    );
   } catch (err) {
     console.warn("[squad] joinRoom failed:", err);
+    useMp.getState().setLinkStatus("error");
+    useMp.getState().setLastError(err instanceof Error ? err.message : String(err));
     roomCode = null;
     return;
   }
+
+  // If no relay has answered with a peer within the grace period, the room
+  // is reachable but empty (normal for the first pilot) or the relays are
+  // unresponsive (network/firewall) — surface "degraded" either way so a
+  // stuck "waiting for pilots…" has a next step (Retry) instead of silence.
+  degradedCheck = setTimeout(() => {
+    const st = useMp.getState();
+    if (st.linkStatus === "connecting") {
+      st.setLinkStatus(st.transportCount > 0 ? "connected" : "degraded");
+    }
+  }, LINK_DEGRADED_AFTER_MS);
 
   const action = room.makeAction<StatePacket>(ACTION);
   sendPacket = (data) => {
@@ -261,6 +358,8 @@ export function joinSquad(code: string): void {
       flying: st.flying,
       tomatoScore: st.tomatoScore,
       tomatoHits: st.tomatoHits,
+      raceHoop: st.raceHoop,
+      raceLaps: st.raceLaps,
     });
   };
 
@@ -299,7 +398,8 @@ export function joinSquad(code: string): void {
 export function leaveSquad(): void {
   if (sendIv) clearInterval(sendIv);
   if (pruneIv) clearInterval(pruneIv);
-  sendIv = pruneIv = null;
+  if (degradedCheck) clearTimeout(degradedCheck);
+  sendIv = pruneIv = degradedCheck = null;
   sendPacket = null;
   sendTomatoPacket = null;
   if (room) {
@@ -315,5 +415,16 @@ export function leaveSquad(): void {
   remoteStates.clear();
   useMp.getState().clearPeers();
   useMp.getState().setTransportCount(0);
+  useMp.getState().setLinkStatus("idle");
+  useMp.getState().setLastError(null);
   useMp.getState().setSession({ room: null, joined: false });
+}
+
+/** Retry the current room from scratch (drop + rejoin) — the panel's Retry
+ *  button, for a stuck "degraded" link. */
+export function retrySquad(): void {
+  const code = roomCode;
+  if (!code) return;
+  roomCode = null; // bypass joinSquad's "already in this room" no-op guard
+  joinSquad(code);
 }

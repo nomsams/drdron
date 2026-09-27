@@ -9,6 +9,8 @@ import { touchActive, useSettings } from "@/state/settings";
 import { useMp } from "@/state/mp";
 import { joinSquad, broadcastTomatoDrop, normalizeRoomCode } from "@/net/mp";
 import { tryDropLocal, useTomato } from "@/state/tomato";
+import { RACE_HOOPS } from "@/config/race";
+import { tryReleaseBall, useRace } from "@/state/race";
 import { useNarrow } from "@/hooks/useNarrow";
 import Minimap from "./Minimap";
 import TouchSticks from "./TouchSticks";
@@ -16,6 +18,7 @@ import PeerMarkers from "./PeerMarkers";
 import MatchBanner from "./MatchBanner";
 import SettingsPanel from "./SettingsPanel";
 import SquadPanel from "./SquadPanel";
+import FpvOverlay from "./FpvOverlay";
 
 // Minimal DOM overlay. Replaces the upstream FlightHUD + FocusPanel +
 // RaceResults + TakeoffPrompt + IdleInteractionLayer (~25 KB of CV-specific
@@ -90,6 +93,8 @@ export default function HUD({
   const showFps = useSettings((s) => s.showFps);
   const minimapOn = useSettings((s) => s.minimap);
   const touchMode = useSettings((s) => s.touch);
+  const cameraMode = useSettings((s) => s.cameraMode);
+  const setSetting = useSettings((s) => s.set);
   const squadJoined = useMp((s) => s.joined);
   const squadRoom = useMp((s) => s.room);
   const squadPeerCount = useMp((s) => s.peers.length);
@@ -98,7 +103,16 @@ export default function HUD({
   const tomatoDrops = useTomato((s) => s.drops);
   const tomatoHits = useTomato((s) => s.hits);
   const tomatoScore = useTomato((s) => s.score);
+  const raceOn = useRace((s) => s.enabled);
+  const raceToggle = useRace((s) => s.toggle);
+  const raceScore = useRace((s) => s.score);
+  const raceHoopIndex = useRace((s) => s.hoopIndex);
+  const raceLaps = useRace((s) => s.laps);
+  const raceLapStartMs = useRace((s) => s.lapStartMs);
+  const raceLastLapMs = useRace((s) => s.lastLapMs);
+  const raceBestLapMs = useRace((s) => s.bestLapMs);
   const narrow = useNarrow();
+  const fpvActive = cameraMode === "fpv" && phase === "flight";
   const [panel, setPanel] = useState<"none" | "settings" | "squad">("none");
   useTelemetry(phase === "flight");
 
@@ -106,6 +120,18 @@ export default function HUD({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "KeyR" && !e.repeat) useFlightStore.getState().toggleRewards();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // V swaps chase / FPV goggle view.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "KeyV" || e.repeat) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")) return;
+      useSettings.getState().set({ cameraMode: useSettings.getState().cameraMode === "fpv" ? "chase" : "fpv" });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -142,38 +168,50 @@ export default function HUD({
         color: "#e8eaf6",
       }}
     >
-      {/* top-left: title + telemetry */}
+      {/* top-left: title + telemetry (replaced by the goggle OSD in FPV) */}
       <div style={{ position: "absolute", top: 16, left: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-        <div
-          style={{
-            pointerEvents: "auto",
-            background: "rgba(12,19,36,0.72)",
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: 12,
-            padding: "10px 14px",
-            backdropFilter: "blur(6px)",
-            maxWidth: narrow ? 220 : 300,
-          }}
-        >
-          <div style={{ fontWeight: 700, fontSize: narrow ? 13 : 15 }}>flyjs — drone scaffold</div>
-          <div style={{ fontSize: 12, opacity: 0.75 }}>
-            {flying
-              ? `${flight.speedKmh.toFixed(0)} km/h · alt ${flight.altitude.toFixed(1)} m${
-                  flight.geofence ? " · GEOFENCE" : ""
-                } · ⬢ ${cells.length}/${PICKUPS.length}${
-                  rewardsEnabled
-                    ? ` · ★ ${score} (${ringsPassed.length}/${REWARD_RINGS.length} · lap ${lap}${
-                        lapStartMs !== null ? ` · ⏱ ${fmtLap(Date.now() - lapStartMs)}` : ""
-                      }${bestLapMs !== null ? ` · best ${fmtLap(bestLapMs)}` : ""}${
-                        lastLapMs !== null && lapStartMs === null ? ` · last ${fmtLap(lastLapMs)}` : ""
-                      })`
-                    : ""
-                }${tomatoOn ? ` · 🍅 ${tomatoScore} (${tomatoHits}/${tomatoDrops || "—"})` : ""}`
-              : phase === "idle"
-                ? "Hold TAKE OFF (or hold F) to launch"
-                : phase.charAt(0).toUpperCase() + phase.slice(1) + "…"}
+        {!fpvActive && (
+          <div
+            style={{
+              pointerEvents: "auto",
+              background: "rgba(12,19,36,0.72)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 12,
+              padding: "10px 14px",
+              backdropFilter: "blur(6px)",
+              maxWidth: narrow ? 220 : 300,
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: narrow ? 13 : 15 }}>flyjs — drone scaffold</div>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              {flying
+                ? `${flight.speedKmh.toFixed(0)} km/h · alt ${flight.altitude.toFixed(1)} m${
+                    flight.geofence ? " · GEOFENCE" : ""
+                  } · ⬢ ${cells.length}/${PICKUPS.length}${
+                    rewardsEnabled
+                      ? ` · ★ ${score} (${ringsPassed.length}/${REWARD_RINGS.length} · lap ${lap}${
+                          lapStartMs !== null ? ` · ⏱ ${fmtLap(Date.now() - lapStartMs)}` : ""
+                        }${bestLapMs !== null ? ` · best ${fmtLap(bestLapMs)}` : ""}${
+                          lastLapMs !== null && lapStartMs === null ? ` · last ${fmtLap(lastLapMs)}` : ""
+                        })`
+                      : ""
+                  }${tomatoOn ? ` · 🍅 ${tomatoScore} (${tomatoHits}/${tomatoDrops || "—"})` : ""}${
+                    raceOn
+                      ? ` · 🏀 ${raceScore} (hoop ${raceHoopIndex + 1}/${RACE_HOOPS.length}${
+                          raceLaps > 0 ? ` · lap ${raceLaps}` : ""
+                        }${raceLapStartMs !== null ? ` · ⏱ ${fmtLap(Date.now() - raceLapStartMs)}` : ""}${
+                          raceBestLapMs !== null ? ` · best ${fmtLap(raceBestLapMs)}` : ""
+                        }${
+                          raceLastLapMs !== null && raceLapStartMs === null ? ` · last ${fmtLap(raceLastLapMs)}` : ""
+                        })`
+                      : ""
+                  }`
+                : phase === "idle"
+                  ? "Hold TAKE OFF (or hold F) to launch"
+                  : phase.charAt(0).toUpperCase() + phase.slice(1) + "…"}
+            </div>
           </div>
-        </div>
+        )}
 
         {(phase === "idle" || phase === "charging") && (
           <button
@@ -281,6 +319,38 @@ export default function HUD({
         </button>
         <button
           type="button"
+          onClick={raceToggle}
+          title="Basketball race: carry the ball through the hoop loop (G to release)"
+          style={{
+            background: raceOn ? "rgba(230,124,60,0.18)" : "none",
+            border: "1px solid rgba(230,124,60,0.5)",
+            borderRadius: 8,
+            color: "#e6975c",
+            cursor: "pointer",
+            fontSize: 12,
+            padding: "4px 8px",
+          }}
+        >
+          🏀 {raceOn ? "on" : "off"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setSetting({ cameraMode: cameraMode === "fpv" ? "chase" : "fpv" })}
+          title="Toggle chase / FPV goggle view (V)"
+          style={{
+            background: cameraMode === "fpv" ? "rgba(192,193,255,0.18)" : "none",
+            border: "1px solid rgba(192,193,255,0.4)",
+            borderRadius: 8,
+            color: "#c0c1ff",
+            cursor: "pointer",
+            fontSize: 12,
+            padding: "4px 8px",
+          }}
+        >
+          🥽 {cameraMode === "fpv" ? "FPV" : "Chase"}
+        </button>
+        <button
+          type="button"
           onClick={() => setPanel((p) => (p === "settings" ? "none" : "settings"))}
           title="Settings"
           style={{
@@ -356,17 +426,47 @@ export default function HUD({
       >
         {flying
           ? narrow
-            ? "Sticks fly · 🍅 drops · ★ rings"
-            : "W/S ↑↓ · A/D yaw · ←→↑↓ fly · Shift sport · R rings · T 🍅 · Esc land"
+            ? "Sticks fly · 🍅 drops · ★ rings · 🏀 G"
+            : "W/S ↑↓ · A/D yaw · ←→↑↓ fly · Shift sport · R rings · T 🍅 · G 🏀 · V FPV · Esc land"
           : "WASD nudge the hovering drone · hold F or the button to fly"}
       </div>
 
       {panel === "settings" && <SettingsPanel onClose={() => setPanel("none")} />}
       {panel === "squad" && <SquadPanel onClose={() => setPanel("none")} />}
-      {minimapOn && <Minimap />}
+      {minimapOn && !fpvActive && <Minimap />}
       <PeerMarkers />
       <MatchBanner />
+      <FpvOverlay />
       {touchActive(touchMode) && <TouchSticks />}
+      {/* basketball release button (mouse + touch) */}
+      {flying && raceOn && (
+        <button
+          type="button"
+          onPointerDown={() => {
+            if (tryReleaseBall()) {
+              engineAudio.init();
+              engineAudio.playDrop();
+            }
+          }}
+          title="Release the ball (G)"
+          style={{
+            position: "absolute",
+            bottom: 340,
+            right: 18,
+            pointerEvents: "auto",
+            width: 60,
+            height: 60,
+            borderRadius: "50%",
+            border: "2px solid rgba(230,124,60,0.6)",
+            background: "rgba(12,19,36,0.72)",
+            fontSize: 26,
+            cursor: "pointer",
+            backdropFilter: "blur(6px)",
+          }}
+        >
+          🏀
+        </button>
+      )}
       {/* tomato drop button (mouse + touch) */}
       {flying && tomatoOn && (
         <button

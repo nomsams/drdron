@@ -22,6 +22,8 @@ import WaterRipples from "./world/WaterRipples";
 import RewardRings from "./world/RewardRings";
 import TomatoTargets from "./world/TomatoTargets";
 import Tomatoes from "./world/Tomatoes";
+import BasketballHoops from "./world/BasketballHoops";
+import Basketball from "./world/Basketball";
 import BlobShadow from "./world/BlobShadow";
 import GuideArrow from "./GuideArrow";
 import AmbientAudio from "./AmbientAudio";
@@ -113,6 +115,8 @@ export default function FlightScene({ quality }: { quality: QualityPreset }) {
       <RewardRings />
       <TomatoTargets />
       <Tomatoes splatCap={quality.terrainSegments <= 48 ? 15 : 30} />
+      <BasketballHoops />
+      <Basketball />
       <GuideArrow />
       {/* NOTE: RemotePilots renders at the Canvas root (DroneExperience) so
           squad ghosts stay visible while idle/charging and before the world

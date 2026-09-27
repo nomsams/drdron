@@ -37,6 +37,11 @@ export const flight = {
   geofence: false,
   /** Time of day: 0 = morning at takeoff → 1 = sunset after a long flight. */
   dayT: 0,
+  /** Simulated flight-battery charge, 1 → 0. A fresh pack every takeoff;
+   *  drains with flight time + throttle (read by the FPV goggle HUD). */
+  battery: 1,
+  /** Seconds since this flight's launch (FPV OSD timer). */
+  flightElapsed: 0,
 };
 
 export function resetFlight() {
@@ -53,6 +58,8 @@ export function resetFlight() {
   flight.shake = 0;
   flight.geofence = false;
   flight.dayT = 0;
+  flight.battery = 1;
+  flight.flightElapsed = 0;
 }
 
 /** Raw key state, written by useFlightControls, read by physics. */

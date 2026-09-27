@@ -87,11 +87,13 @@ The splash now carries a timestamped boot log — read it before anything else:
 - **Take Off**: button or hold `F` (1.1 s charge) · **Land**: button or `Esc`
 - In flight: `W/S` ascend/descend · `A/D` yaw · arrows fly/strafe ·
   `Shift` sport · `R` toggle reward rings · `T`/`B` or the 🍅 button drops a
-  tomato · `Esc` land
+  tomato · `G` or the 🏀 button releases the basketball · `V` or the 🥽 button
+  swaps chase/FPV view · `Esc` land
 - Idle: `WASD`/arrows nudge the hovering drone
 - URL hooks: `?quality=potato|balanced|high|ultra` forces a tier,
   `?autofly=1` takes off automatically (demos, screenshots),
-  `?tomatoes=0` starts with tomato mode off, `?room=CODE` auto-joins a squad
+  `?tomatoes=0` starts with tomato mode off, `?race=0` starts with the
+  basketball race off, `?room=CODE` auto-joins a squad
 
 ## Island life & reward rings
 
@@ -122,6 +124,45 @@ The splash now carries a timestamped boot log — read it before anything else:
   banner names the winner on every client (scores converge over P2P, no host),
   with one-tap Rematch. Floating name + distance markers track squadmates in
   3D (edge-glow when off-screen), so you can actually find each other.
+- **Basketball race** (`src/three/world/Basketball{,Hoops}.tsx`,
+  `src/state/race.ts`, `src/config/race.ts`): carry a basketball around a
+  6-hoop aerial loop (distinct from the reward-ring course) and release it
+  (🏀 button or `G`) to arc it down through the rim — real gravity + air drag,
+  a gold aim predictor (turns emerald when the arc would swish), ground
+  bounce with basketball-like restitution. A make scores 300 pts, auto-
+  recatches the ball, and advances to the next hoop; clearing the loop adds a
+  500-pt lap bonus and records a best-lap time (persisted). A miss drops the
+  ball to the ground — fly down and hover close to reclaim it, then retry the
+  same hoop. Local-authoritative like tomato bombing (your run scores on your
+  client); squadmates' hoop/lap progress shows on the roster.
+- **FPV goggles** (`V` key or the 🥽 HUD button): swaps the chase camera for
+  a rigid nose-mounted view — wide FOV, attitude directly from the drone
+  (no look-at smoothing), so it reads like real FPV footage instead of a
+  close-up chase cam. A digital-goggle OSD overlays it: vignette + scanlines,
+  a center reticle, a REC timer, signal bars that fade with distance from the
+  pad, and a battery gauge. The flight battery is simulated (a fresh pack
+  every takeoff, ~5 min to empty at a gentle hover, faster under
+  throttle/sport) — it blinks amber under 20%, red under 10%, and forces a
+  landing at 0%, mirroring a real FPV failsafe.
+
+## Multiplayer link health
+
+`src/net/mp.ts` pins a curated set of 8 known-reliable public Nostr relays
+(`redundancy: 4` — several are queried at once) instead of trystero's full
+default list, which carries some relays that are slow or offline. The Squad
+panel now shows link status: **degraded** (no relay response within ~7 s —
+check network/firewall, WebRTC needs UDP) or **error** (relay unreachable),
+each with a **Retry** button that drops and rejoins the room.
+
+For strict NATs (symmetric NAT, locked-down corporate networks) where plain
+STUN can't punch through, optional TURN relay config can be set via
+`.env.local` (no credentials ship with this project):
+
+```
+VITE_TURN_URLS=turn:your-host:3478
+VITE_TURN_USERNAME=...
+VITE_TURN_CREDENTIAL=...
+```
 
 ## Mobile
 
