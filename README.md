@@ -133,14 +133,24 @@ The splash now carries a timestamped boot log — read it before anything else:
   recatches the ball, and advances to the next hoop; clearing the loop adds a
   500-pt lap bonus and records a best-lap time (persisted). A miss drops the
   ball to the ground — fly down and hover close to reclaim it, then retry the
-  same hoop. Local-authoritative like tomato bombing (your run scores on your
-  client); squadmates' hoop/lap progress shows on the roster.
+  same hoop (the release button dims and the minimap marks the ball's resting
+  spot while it's down, so "pressing G does nothing" reads as "go get it"
+  rather than a dead button). Local-authoritative like tomato bombing (your
+  run scores on your client); squadmates' hoop/lap progress shows on the
+  roster.
 - **FPV goggles** (`V` key or the 🥽 HUD button): swaps the chase camera for
   a rigid nose-mounted view — wide FOV, attitude directly from the drone
   (no look-at smoothing), so it reads like real FPV footage instead of a
-  close-up chase cam. A digital-goggle OSD overlays it: vignette + scanlines,
-  a center reticle, a REC timer, signal bars that fade with distance from the
-  pad, and a battery gauge. The flight battery is simulated (a fresh pack
+  close-up chase cam. The drone's own body/arms/props render on a dedicated
+  Three.js layer that this camera doesn't enable (`OWN_BODY_LAYER` in
+  `Drone.tsx`), so there's nothing to clip into mid-maneuver — a nose-mounted
+  camera is necessarily right at the fuselage/prop geometry, and any fixed
+  offset "clearing" it in level flight ends up back inside it during a pitch
+  or roll. A digital-goggle OSD overlays it: vignette + scanlines, a center
+  reticle, a REC timer, signal bars that fade with distance from the pad, a
+  battery gauge, and a hint of propeller blur at the bottom corners (flat 2D,
+  not 3D — exact corner placement in 3D at this fov is unreasonably fiddly
+  for a decorative touch). The flight battery is simulated (a fresh pack
   every takeoff, ~5 min to empty at a gentle hover, faster under
   throttle/sport) — it blinks amber under 20%, red under 10%, and forces a
   landing at 0%, mirroring a real FPV failsafe.

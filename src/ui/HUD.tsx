@@ -10,7 +10,7 @@ import { useMp } from "@/state/mp";
 import { joinSquad, broadcastTomatoDrop, normalizeRoomCode } from "@/net/mp";
 import { tryDropLocal, useTomato } from "@/state/tomato";
 import { RACE_HOOPS } from "@/config/race";
-import { tryReleaseBall, useRace } from "@/state/race";
+import { hasBall, tryReleaseBall, useRace } from "@/state/race";
 import { useNarrow } from "@/hooks/useNarrow";
 import Minimap from "./Minimap";
 import TouchSticks from "./TouchSticks";
@@ -111,6 +111,10 @@ export default function HUD({
   const raceLapStartMs = useRace((s) => s.lapStartMs);
   const raceLastLapMs = useRace((s) => s.lastLapMs);
   const raceBestLapMs = useRace((s) => s.bestLapMs);
+  // Not reactive state — ball.state is a plain mutable field (see
+  // state/race.ts) — but useTelemetry already forces a re-render at 5 Hz
+  // while flying, so this reads fresh on every one of those.
+  const ballHeld = hasBall();
   const narrow = useNarrow();
   const fpvActive = cameraMode === "fpv" && phase === "flight";
   const [panel, setPanel] = useState<"none" | "settings" | "squad">("none");
@@ -203,7 +207,7 @@ export default function HUD({
                           raceBestLapMs !== null ? ` · best ${fmtLap(raceBestLapMs)}` : ""
                         }${
                           raceLastLapMs !== null && raceLapStartMs === null ? ` · last ${fmtLap(raceLastLapMs)}` : ""
-                        })`
+                        }${ballHeld ? "" : " · ball on ground, go get it!"})`
                       : ""
                   }`
                 : phase === "idle"
@@ -438,7 +442,9 @@ export default function HUD({
       <MatchBanner />
       <FpvOverlay />
       {touchActive(touchMode) && <TouchSticks />}
-      {/* basketball release button (mouse + touch) */}
+      {/* basketball release button (mouse + touch) — dims + relabels when
+          you're not holding it, so "nothing happens" reads as "go get the
+          ball" instead of "the button is broken". */}
       {flying && raceOn && (
         <button
           type="button"
@@ -448,7 +454,7 @@ export default function HUD({
               engineAudio.playDrop();
             }
           }}
-          title="Release the ball (G)"
+          title={ballHeld ? "Release the ball (G)" : "Ball's on the ground — fly down and hover close to it"}
           style={{
             position: "absolute",
             bottom: 340,
@@ -457,14 +463,15 @@ export default function HUD({
             width: 60,
             height: 60,
             borderRadius: "50%",
-            border: "2px solid rgba(230,124,60,0.6)",
+            border: `2px solid rgba(230,124,60,${ballHeld ? 0.6 : 0.25})`,
             background: "rgba(12,19,36,0.72)",
             fontSize: 26,
             cursor: "pointer",
+            opacity: ballHeld ? 1 : 0.45,
             backdropFilter: "blur(6px)",
           }}
         >
-          🏀
+          {ballHeld ? "🏀" : "📍"}
         </button>
       )}
       {/* tomato drop button (mouse + touch) */}

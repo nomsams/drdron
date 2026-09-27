@@ -237,6 +237,37 @@ export default function FpvOverlay() {
         <div>ALT {flight.altitude.toFixed(1)}m</div>
       </div>
 
+      {/* A hint of propeller blur at the very bottom corners — flat 2D, not
+          real 3D geometry, so it sits exactly where intended regardless of
+          the very wide FPV fov (precise 3D corner placement at 122° would
+          be unreasonably fiddly for a purely decorative touch). */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: -40,
+          left: -40,
+          width: 140,
+          height: 140,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle at 65% 35%, rgba(20,20,22,0.75) 0%, rgba(20,20,22,0.4) 45%, transparent 72%)",
+          animation: "flyjs-prop-spin 0.15s linear infinite",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          bottom: -40,
+          right: -40,
+          width: 140,
+          height: 140,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle at 35% 35%, rgba(20,20,22,0.75) 0%, rgba(20,20,22,0.4) 45%, transparent 72%)",
+          animation: "flyjs-prop-spin 0.15s linear infinite reverse",
+        }}
+      />
+
       {pct <= 15 && (
         <div
           style={{
@@ -259,6 +290,7 @@ export default function FpvOverlay() {
         {`
         @keyframes flyjs-rec-blink { 50% { opacity: 0.15; } }
         @keyframes flyjs-batt-blink { 50% { opacity: 0.35; } }
+        @keyframes flyjs-prop-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         `}
       </style>
     </div>

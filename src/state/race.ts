@@ -215,6 +215,14 @@ export function tryReleaseBall(): boolean {
   return true;
 }
 
+/** Are you currently holding the ball? (Poll this for UI feedback — a
+ *  release only ever does something while this is true; once it's loose on
+ *  the ground, pressing the button again is correctly a no-op until you
+ *  fly back down and reclaim it.) */
+export function hasBall(): boolean {
+  return ball.state === "carried";
+}
+
 /** Reclaim a loose ball if the drone is close and roughly level with it.
  *  Only once it's actually landed — see the `landed` field's note. */
 export function tryPickupBall(): boolean {

@@ -7,6 +7,7 @@ import { birdMarks } from "@/three/world/Birds";
 import { BEACH, PAD, PICKUPS, REWARD_RINGS, WORLD } from "@/config/world";
 import { TOMATO_TARGETS } from "@/config/tomato";
 import { isTargetDown, useTomato } from "@/state/tomato";
+import { ball, useRace } from "@/state/race";
 import { useNarrow } from "@/hooks/useNarrow";
 import { heightAt } from "@/lib/terrain";
 
@@ -115,6 +116,18 @@ export default function Minimap() {
           ctx.lineWidth = 1;
           ctx.stroke();
         }
+      }
+      // Loose basketball: pulsing marker so a miss is easy to relocate.
+      if (useRace.getState().enabled && ball.state === "loose") {
+        const [x, y] = toPx(ball.x, ball.z);
+        const pulse = 3 + Math.sin(Date.now() / 200) * 1.2;
+        ctx.fillStyle = "#e67c3c";
+        ctx.beginPath();
+        ctx.arc(x, y, pulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.9)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
       }
       // Birds.
       ctx.fillStyle = "rgba(200,205,230,0.8)";

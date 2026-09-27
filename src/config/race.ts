@@ -44,7 +44,8 @@ export const BALL_CARRY_FORWARD = 0.35;
 export const BALL_RELEASE_FORWARD_KICK = 3;
 export const BALL_RELEASE_DOWN_PUSH = 1;
 export const BALL_RELEASE_COOLDOWN_MS = 350;
-/** How close (xz) + how level (y) the drone must get to reclaim a loose ball. */
-export const BALL_PICKUP_RADIUS = 2.4;
-export const BALL_PICKUP_ALT = 1.8;
+/** How close (xz) + how level (y) the drone must get to reclaim a loose ball.
+ *  Generous on purpose — casual flying rarely lands exactly on top of it. */
+export const BALL_PICKUP_RADIUS = 3.2;
+export const BALL_PICKUP_ALT = 2.6;
 export const BALL_RADIUS = 0.32;

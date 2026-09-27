@@ -16,6 +16,14 @@ import ProceduralDrone from "./ProceduralDrone";
 
 export const IDLE_CAM = new THREE.Vector3(0, 3.2, 12);
 
+// FPV needs to NOT see the drone's own body — a camera glued to the nose is
+// necessarily near/inside the fuselage/nose-cone/arm geometry, and any fixed
+// offset that "clears" it during level flight ends up back inside it during
+// a pitch/roll maneuver (the reported flicker). Rather than chase a moving
+// target with an offset tweak, the local body renders on its own layer and
+// the FPV camera simply doesn't have that layer enabled — see ChaseCamera.
+export const OWN_BODY_LAYER = 1;
+
 const LAUNCH_DURATION = 2.6;
 
 const BASE_SPEED = 0.15;
@@ -66,7 +74,12 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
   );
 
   useEffect(() => {
-    if (group.current) group.current.rotation.order = "YXZ";
+    const g = group.current;
+    if (!g) return;
+    g.rotation.order = "YXZ";
+    // Own body on its own layer (see OWN_BODY_LAYER) so the FPV camera —
+    // which only enables the default layer — never renders it.
+    g.traverse((o) => o.layers.set(OWN_BODY_LAYER));
   }, []);
 
   useEffect(() => {
