@@ -8,6 +8,7 @@
 import { create } from "zustand";
 import * as THREE from "three";
 import { LAP_BONUS, REWARD_POINTS } from "@/config/world";
+import { HP_MAX } from "@/config/hull";
 
 export type FlightPhase = "idle" | "charging" | "launching" | "flight" | "landing";
 
@@ -42,6 +43,14 @@ export const flight = {
   battery: 1,
   /** Seconds since this flight's launch (FPV OSD timer). */
   flightElapsed: 0,
+  /** Hull points, HP_MAX → 0. A fresh airframe every takeoff; crashes into
+   *  trees/rocks/birds/pilots (and hard slams into ground/water) cost HP —
+   *  see state/hull.ts. */
+  hp: HP_MAX,
+  /** HP hit 0: motors out, tumbling down (DroneExperience's crash sequence). */
+  downed: false,
+  /** Hovering low over the helipad, being repaired (HUD hint). */
+  repairing: false,
 };
 
 export function resetFlight() {
@@ -60,6 +69,9 @@ export function resetFlight() {
   flight.dayT = 0;
   flight.battery = 1;
   flight.flightElapsed = 0;
+  flight.hp = HP_MAX;
+  flight.downed = false;
+  flight.repairing = false;
 }
 
 /** Raw key state, written by useFlightControls, read by physics. */

@@ -6,6 +6,7 @@ import { flight, resetFlight, setTakeoffRequestHandler, useFlightStore } from "@
 import { engineAudio } from "@/lib/audio";
 import { blog } from "@/lib/bootlog";
 import { QUALITY_PRESETS, type QualityLevel } from "@/config/quality";
+import { DOWNED_FALL_MS } from "@/config/hull";
 import Drone from "./Drone";
 import ChaseCamera from "./ChaseCamera";
 import Lighting from "./Lighting";
@@ -128,17 +129,38 @@ export default function DroneExperience({ level }: { level: QualityLevel }) {
     }, 380);
   }, []);
 
+  // --- Crash (HP hit 0): motors cut, the drone tumbles down (Drone.tsx's
+  // downed branch), then the same fade/reset as a landing — a fresh airframe
+  // on the next takeoff.
+  const beginCrash = useCallback(() => {
+    if (useFlightStore.getState().phase !== "flight") return;
+    flight.downed = true;
+    useFlightStore.getState().setPhase("landing");
+    setTimeout(() => {
+      setShutter(true);
+      setTimeout(() => {
+        resetFlight();
+        engineAudio.setHum(0);
+        useFlightStore.getState().setPhase("idle");
+        setTimeout(() => setShutter(false), 120);
+      }, 380);
+    }, DOWNED_FALL_MS);
+  }, []);
+
   useEffect(() => {
-    (window as unknown as { __flyjsLand?: () => void }).__flyjsLand = beginLanding;
+    const w = window as unknown as { __flyjsLand?: () => void; __flyjsCrash?: () => void };
+    w.__flyjsLand = beginLanding;
+    w.__flyjsCrash = beginCrash;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && useFlightStore.getState().phase === "flight") beginLanding();
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
-      delete (window as unknown as { __flyjsLand?: () => void }).__flyjsLand;
+      delete w.__flyjsLand;
+      delete w.__flyjsCrash;
     };
-  }, [beginLanding]);
+  }, [beginLanding, beginCrash]);
 
   // --- Scroll lock while flying ---
   useEffect(() => {

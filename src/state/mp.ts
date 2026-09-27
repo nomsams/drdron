@@ -19,6 +19,8 @@ export interface PeerInfo {
   /** Basketball race progress (0 for older clients / race mode off). */
   raceHoop: number;
   raceLaps: number;
+  /** Hull points (HP_MAX for older clients). */
+  hp: number;
 }
 
 /** P2P link health, surfaced in the Squad panel. */

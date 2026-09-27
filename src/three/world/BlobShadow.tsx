@@ -9,6 +9,8 @@ import { heightAt } from "@/lib/terrain";
 // No shadow maps anywhere — the drone gets a soft radial-gradient blob that
 // tracks the terrain under it, shrinking/fading with altitude.
 
+const WATER_Y = -0.35;
+
 export default function BlobShadow() {
   const mesh = useRef<THREE.Mesh>(null);
 
@@ -29,7 +31,9 @@ export default function BlobShadow() {
     const m = mesh.current;
     if (!m) return;
     const { x, z } = flight.pos;
-    const ground = heightAt(x, z);
+    // Sit on the water surface, not the sea/pond floor under it (the water
+    // is slightly transparent, so a floor shadow read as a murky blob).
+    const ground = Math.max(heightAt(x, z), WATER_Y);
     const alt = Math.max(flight.pos.y - ground, 0);
     m.position.set(x, ground + 0.06, z);
     const s = THREE.MathUtils.clamp(1.7 - alt * 0.045, 0.5, 1.7);

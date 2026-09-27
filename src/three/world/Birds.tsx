@@ -27,9 +27,26 @@ interface BirdSpec {
 const BODY = "#232b40";
 const WING = "#2e3852";
 
-/** Latest bird positions (world x/z), published every frame for the minimap.
- *  Mutable module state — no React involved. Cleared when the flock unmounts. */
-export const birdMarks: { x: number; z: number }[] = [];
+/** Latest bird positions + velocities (world space), published every frame
+ *  for the minimap and drone-bird collisions. Mutable module state — no
+ *  React involved. Cleared when the flock unmounts. Index = bird index. */
+export const birdMarks: { x: number; y: number; z: number; vx: number; vy: number; vz: number }[] = [];
+
+// Bird strikes: a struck bird is flung away from the drone, flaps hard and
+// tumbles, then glides back into its circle. `at` in performance.now() ms.
+const KNOCK_MS = 2500;
+const knocks: ({ at: number; dx: number; dy: number; dz: number } | undefined)[] = [];
+
+/** Knock bird `i` away along (dx,dy,dz). Returns false if it was already hit
+ *  recently — one strike per bird per knock, not one per frame of overlap. */
+export function knockBird(i: number, dx: number, dy: number, dz: number): boolean {
+  const now = performance.now();
+  const k = knocks[i];
+  if (k && now - k.at < KNOCK_MS) return false;
+  const len = Math.hypot(dx, dy, dz) || 1;
+  knocks[i] = { at: now, dx: dx / len, dy: dy / len, dz: dz / len };
+  return true;
+}
 
 /** Tapered, swept wing quad: wide chord at the shoulder, narrow at the tip. */
 function buildWing(sign: 1 | -1): THREE.BufferGeometry {
@@ -121,31 +138,49 @@ export default function Birds({ count }: { count: number }) {
     return arr;
   }, [count]);
 
-  useFrame((state) => {
+  useFrame((state, dtRaw) => {
     const t = state.clock.elapsedTime;
+    const dt = Math.max(1e-3, Math.min(dtRaw, 0.1));
+    const now = performance.now();
     specs.forEach((s, i) => {
       const g = groups.current[i];
       if (!g) return;
       // Wandering circle: breathing radius + modulated angular speed.
       const a = s.phase + t * s.speed * (1 + 0.15 * Math.sin(t * 0.11 + s.phase));
       const r = s.radius + Math.sin(t * 0.23 + s.phase * 2) * 1.6;
-      const bx = BIRDS.x + Math.cos(a) * r;
-      const bz = BIRDS.z + Math.sin(a) * r;
-      g.position.set(
-        bx,
-        s.height + Math.sin(t * 0.5 + s.phase) * 0.9 + Math.sin(t * 1.7 + s.phase) * 0.15,
-        bz
-      );
-      birdMarks[i] = { x: bx, z: bz };
+      let bx = BIRDS.x + Math.cos(a) * r;
+      let by = s.height + Math.sin(t * 0.5 + s.phase) * 0.9 + Math.sin(t * 1.7 + s.phase) * 0.15;
+      let bz = BIRDS.z + Math.sin(a) * r;
+      // Struck: flung out along the knock direction, easing back home.
+      const k = knocks[i];
+      const tau = k ? (now - k.at) / 1000 : Infinity;
+      const knocked = tau < KNOCK_MS / 1000;
+      if (k && knocked) {
+        const push = 3.2 * (1 - Math.exp(-7 * tau)) * Math.exp(-1.1 * tau);
+        bx += k.dx * push;
+        by += k.dy * push + 0.8 * push;
+        bz += k.dz * push;
+      }
+      const prev = birdMarks[i];
+      g.position.set(bx, by, bz);
+      birdMarks[i] = {
+        x: bx,
+        y: by,
+        z: bz,
+        vx: prev ? (bx - prev.x) / dt : 0,
+        vy: prev ? (by - prev.y) / dt : 0,
+        vz: prev ? (bz - prev.z) / dt : 0,
+      };
       // Face travel direction; bank into the turn; slight pitch with climb.
       const dir = s.speed >= 0 ? 1 : -1;
       g.rotation.y = -a + (dir >= 0 ? 0 : Math.PI);
-      g.rotation.z = dir * 0.18;
+      g.rotation.z = dir * 0.18 + (knocked ? Math.sin(tau * 20) * 0.6 * Math.exp(-2 * tau) : 0);
       g.rotation.x = Math.cos(t * 0.5 + s.phase) * 0.06;
       // Flap/glide cycle: envelope swells and dies instead of constant flap.
+      // A struck bird flaps hard until it recovers.
       const env = Math.pow(0.5 + 0.5 * Math.sin(t * s.glideRate + s.phase * 1.7), 2);
-      const amp = 0.1 + 0.9 * env;
-      const flap = Math.sin(t * s.flapSpeed + s.phase * 3) * 0.7 * amp;
+      const amp = knocked ? 1 : 0.1 + 0.9 * env;
+      const flap = Math.sin(t * s.flapSpeed * (knocked ? 1.8 : 1) + s.phase * 3) * 0.7 * amp;
       const wl = wingsL.current[i];
       const wr = wingsR.current[i];
       // Mirrored signs: left wing extends −X so it needs the negative angle
@@ -188,8 +223,10 @@ export default function Birds({ count }: { count: number }) {
 function FlockCleanup() {
   useEffect(() => {
     birdMarks.length = 0;
+    knocks.length = 0;
     return () => {
       birdMarks.length = 0;
+      knocks.length = 0;
     };
   }, []);
   return null;

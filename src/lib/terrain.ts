@@ -142,6 +142,8 @@ export interface Collider {
   r: number;
   /** World-space y of the obstacle's top — the drone flies over above this. */
   top: number;
+  /** What a crash into it counts as (hull damage + impact burst). */
+  kind: "tree" | "rock";
 }
 
 export interface WorldData {
@@ -219,13 +221,13 @@ export function getWorldData(counts: ScatterCounts): WorldData {
   const grass = scatter(rng, counts.grass, 0.6, 1.3, 0.15, WORLD.softRadius);
 
   const colliders: Collider[] = [
-    ...trees.map((t) => ({ x: t.x, z: t.z, r: 0.9 * t.scale, top: t.y + 4.5 * t.scale })),
+    ...trees.map((t) => ({ x: t.x, z: t.z, r: 0.9 * t.scale, top: t.y + 4.5 * t.scale, kind: "tree" as const })),
     ...rocks
       .filter((r) => r.scale > 0.8)
-      .map((r) => ({ x: r.x, z: r.z, r: 0.8 * r.scale, top: r.y + 1.2 * r.scale })),
-    // Solid landmarks: route around, not over.
-    { x: MOUNTAIN.x, z: MOUNTAIN.z, r: MOUNTAIN.r, top: heightAt(MOUNTAIN.x, MOUNTAIN.z) + 40 },
-    { x: WATERFALL.x, z: WATERFALL.z, r: WATERFALL.r, top: heightAt(WATERFALL.x, WATERFALL.z) + 8 },
+      .map((r) => ({ x: r.x, z: r.z, r: 0.8 * r.scale, top: r.y + 1.2 * r.scale, kind: "rock" as const })),
+    // Solid landmarks: route around, not over. Both are rock.
+    { x: MOUNTAIN.x, z: MOUNTAIN.z, r: MOUNTAIN.r, top: heightAt(MOUNTAIN.x, MOUNTAIN.z) + 40, kind: "rock" },
+    { x: WATERFALL.x, z: WATERFALL.z, r: WATERFALL.r, top: heightAt(WATERFALL.x, WATERFALL.z) + 8, kind: "rock" },
   ];
 
   const data: WorldData = { trees, rocks, grass, colliders };

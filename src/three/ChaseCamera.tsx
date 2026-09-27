@@ -80,7 +80,10 @@ export default function ChaseCamera() {
       fpvEuler.current.set(flight.pitch, h, flight.roll, "YXZ");
       fpvOffsetWorld.current.copy(FPV_OFFSET).applyEuler(fpvEuler.current);
       targetPos.copy(flight.pos).add(fpvOffsetWorld.current);
-      camera.position.lerp(targetPos, dt * FPV_POS_LERP);
+      // Exponential smoothing, not `dt * rate`: at this stiffness a plain
+      // lerp factor passes 1 below ~15 fps and overshoots, swinging the
+      // camera off the nose (the carried ball then floats mid-view).
+      camera.position.lerp(targetPos, 1 - Math.exp(-FPV_POS_LERP * dt));
 
       if (flight.shake > 0.001) {
         shakeOffset.current.set(

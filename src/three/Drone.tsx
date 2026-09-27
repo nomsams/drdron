@@ -5,10 +5,19 @@ import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { flight, keys, useFlightStore } from "@/state/flight";
 import { useSettings } from "@/state/settings";
+import { applyHit, repairHull } from "@/state/hull";
 import { engineAudio } from "@/lib/audio";
 import { heightAt, getWorldData } from "@/lib/terrain";
-import { WORLD, SPAWN } from "@/config/world";
+import { WORLD, SPAWN, PAD } from "@/config/world";
+import {
+  HP_MAX,
+  PAD_REPAIR_MAX_ALT,
+  PAD_REPAIR_MAX_SPEED,
+  PAD_REPAIR_PER_SEC,
+} from "@/config/hull";
+import { predictedRemote, remoteStates } from "@/net/mp";
 import ProceduralDrone from "./ProceduralDrone";
+import { birdMarks, knockBird } from "./world/Birds";
 
 // Flight model ported from rishabhrathod01.github.io (MIT).
 // Simplified: idle hovers above the helipad (no DOM hero-anchor projection),
@@ -44,6 +53,28 @@ const YAW_BANK = 0.18;
 // real FPV failsafe) — see the FPV goggle HUD for the readout.
 const BATTERY_DRAIN_PER_SEC = 1 / 300;
 
+// Collisions (hull damage lives in state/hull + config/hull).
+const WATER_Y = -0.35;
+/** Drone centre stays this far above the surface (ground or water). */
+const HOVER_CLEARANCE = 0.8;
+const BIRD_HIT_RADIUS = 1.1;
+/** Two drones' centres closer than this are touching (~0.65 m each). */
+const PILOT_HIT_RADIUS = 1.3;
+/** Only pilots heard from recently count as solid. */
+const PILOT_FRESH_MS = 1500;
+/** Bounce: how much of the into-contact velocity is reflected. */
+const PILOT_RESTITUTION = 0.6;
+
+const _pilot = { x: 0, y: 0, z: 0 };
+
+/** Terrain surface normal via central differences on heightAt. */
+function terrainNormal(x: number, z: number, out: THREE.Vector3): THREE.Vector3 {
+  const e = 0.5;
+  const dhdx = (heightAt(x + e, z) - heightAt(x - e, z)) / (2 * e);
+  const dhdz = (heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e);
+  return out.set(-dhdx, 1, -dhdz).normalize();
+}
+
 function easeInOutCubic(t: number) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
@@ -54,8 +85,8 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
   const setPhase = useFlightStore((s) => s.setPhase);
 
   const launch = useRef({ t: 0, from: new THREE.Vector3(), active: false });
-  const crashCooldown = useRef(0);
   const batteryLandTriggered = useRef(false);
+  const surfaceN = useMemo(() => new THREE.Vector3(), []);
   // Idle hover sits in front of the camera (which looks at IDLE_LOOK), so the
   // hero shot always shows the drone. Right of the copy on desktop, near
   // center on small screens. Launch arcs from here to the pad.
@@ -138,6 +169,29 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
       return;
     }
 
+    if (phase === "landing" && flight.downed) {
+      // HP hit 0: motors out. Tumble and fall under gravity (keeping some of
+      // the crash momentum) until it hits the surface, then lie there until
+      // the respawn fade (DroneExperience's crash sequence).
+      const v = flight.vel;
+      v.y -= 18 * dt;
+      v.x *= 1 - dt * 0.8;
+      v.z *= 1 - dt * 0.8;
+      flight.pos.addScaledVector(v, dt);
+      const floor = Math.max(heightAt(flight.pos.x, flight.pos.z), WATER_Y) + 0.3;
+      if (flight.pos.y <= floor) {
+        flight.pos.y = floor;
+        v.set(0, 0, 0);
+      } else {
+        g.rotation.x += dt * 3.4;
+        g.rotation.z += dt * 2.2;
+      }
+      g.position.copy(flight.pos);
+      flight.propSpin = THREE.MathUtils.lerp(flight.propSpin, 0, dt * 2.5);
+      engineAudio.setHum(0);
+      return;
+    }
+
     if (phase === "landing") {
       flight.propSpin = THREE.MathUtils.lerp(flight.propSpin, 0.45, dt * 3);
       g.position.set(flight.pos.x, flight.pos.y + Math.sin(t * 1.4) * 0.06, flight.pos.z);
@@ -195,22 +249,24 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
       pos.z *= s;
     }
 
-    // Terrain clamp (heightAt is the collision engine).
-    const ground = heightAt(pos.x, pos.z);
-    const minY = ground + 0.8;
+    // Surface clamp: terrain, or the water plane where terrain dips below it
+    // (heightAt is the collision engine). Impact speed is the velocity into
+    // the surface along its normal — skimming low over flat ground is free,
+    // a hard descent or flying fast into a hillside is not (config/hull).
+    const terrain = heightAt(pos.x, pos.z);
+    const onWater = terrain < WATER_Y;
+    const surface = onWater ? WATER_Y : terrain;
+    const minY = surface + HOVER_CLEARANCE;
     if (pos.y < minY) {
-      if (vel.y < -6 && crashCooldown.current <= 0) {
-        engineAudio.playCrash();
-        flight.shake = 0.4;
-        crashCooldown.current = 0.8;
-      }
+      const n = onWater ? surfaceN.set(0, 1, 0) : terrainNormal(pos.x, pos.z, surfaceN);
+      const into = -vel.dot(n);
+      if (into > 0) applyHit(onWater ? "water" : "ground", into, { x: pos.x, y: surface + 0.1, z: pos.z });
       pos.y = minY;
       if (vel.y < 0) vel.y = 0;
     }
     pos.y = Math.min(pos.y, WORLD.maxAltitude);
 
     // Obstacle cylinders (trees/rocks/landmarks), brute-force 2D.
-    crashCooldown.current -= dt;
     const { colliders } = getWorldData(scatter);
     for (const c of colliders) {
       if (pos.y > c.top) continue;
@@ -228,12 +284,50 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
         if (vdotn < 0) {
           vel.x = (vel.x - 2 * vdotn * nx) * 0.45;
           vel.z = (vel.z - 2 * vdotn * nz) * 0.45;
-          if (Math.abs(vdotn) > 3 && crashCooldown.current <= 0) {
-            engineAudio.playCrash();
-            flight.shake = 0.3;
-            crashCooldown.current = 0.8;
-          }
+          applyHit(c.kind, -vdotn, { x: c.x + nx * c.r, y: pos.y, z: c.z + nz * c.r });
         }
+      }
+    }
+
+    // Bird strikes (only while the flock is mounted). Relative speed, since
+    // a bird flying into you hurts as much as you flying into it.
+    for (let i = 0; i < birdMarks.length; i++) {
+      const b = birdMarks[i];
+      if (!b) continue;
+      const bx = b.x - pos.x;
+      const by = b.y - pos.y;
+      const bz = b.z - pos.z;
+      if (bx * bx + by * by + bz * bz > BIRD_HIT_RADIUS * BIRD_HIT_RADIUS) continue;
+      if (!knockBird(i, bx, by, bz)) continue; // this bird was just hit
+      const rel = Math.hypot(vel.x - b.vx, vel.y - b.vy, vel.z - b.vz);
+      applyHit("bird", rel, { x: pos.x + bx / 2, y: pos.y + by / 2, z: pos.z + bz / 2 });
+      vel.multiplyScalar(0.8);
+    }
+
+    // Pilot-vs-pilot bumps. Each client resolves its own side against the
+    // other's dead-reckoned ghost, so both drones bounce and both take the
+    // hit without any authority deciding who hit whom.
+    const nowMs = Date.now();
+    for (const st of remoteStates.values()) {
+      if (!st.flying || st.hp <= 0 || nowMs - st.seen > PILOT_FRESH_MS) continue;
+      const p = predictedRemote(st, _pilot);
+      const px = pos.x - p.x;
+      const py = pos.y - p.y;
+      const pz = pos.z - p.z;
+      const d2 = px * px + py * py + pz * pz;
+      if (d2 >= PILOT_HIT_RADIUS * PILOT_HIT_RADIUS || d2 < 1e-6) continue;
+      const d = Math.sqrt(d2);
+      const nx = px / d;
+      const ny = py / d;
+      const nz = pz / d;
+      pos.set(p.x + nx * PILOT_HIT_RADIUS, p.y + ny * PILOT_HIT_RADIUS, p.z + nz * PILOT_HIT_RADIUS);
+      const vn = (vel.x - st.vx) * nx + (vel.y - st.vy) * ny + (vel.z - st.vz) * nz;
+      if (vn < 0) {
+        const k = -(1 + PILOT_RESTITUTION) * vn * 0.5;
+        vel.x += nx * k;
+        vel.y += ny * k;
+        vel.z += nz * k;
+        applyHit("pilot", -vn, { x: p.x + nx * 0.65, y: p.y + ny * 0.65, z: p.z + nz * 0.65 });
       }
     }
 
@@ -247,7 +341,16 @@ export default function Drone({ scatter }: { scatter: { trees: number; rocks: nu
 
     const speed = vel.length();
     flight.speedKmh = speed * 3.6;
-    flight.altitude = Math.max(pos.y - ground, 0);
+    flight.altitude = Math.max(pos.y - surface, 0);
+
+    // Helipad pit stop: hover low and slow over the pad to repair.
+    const padDist = Math.hypot(pos.x - PAD.x, pos.z - PAD.z);
+    flight.repairing =
+      flight.hp < HP_MAX &&
+      padDist < PAD.r &&
+      flight.altitude < PAD_REPAIR_MAX_ALT &&
+      speed < PAD_REPAIR_MAX_SPEED;
+    if (flight.repairing) repairHull(PAD_REPAIR_PER_SEC * dt, { quiet: true });
     flight.propSpin = Math.min(1, 0.55 + speed / 25);
     flight.throttleTotal =
       Math.abs(throttleF) + Math.abs(throttleS) + Math.abs(throttleY) + Math.abs(yawInput) * 0.5;

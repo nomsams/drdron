@@ -6,19 +6,26 @@
 //
 // Protocol (action "s", 10 Hz broadcast):
 //   { v, id, p:[x,y,z], h, pi, ro, spin, f, name, color, score, lap,
-//     ts?, th?, rh?, rl? }
-//   (ts/th = tomato score/hits, rh/rl = race hoop index/laps — all optional,
-//   for backwards compat with older clients that omit them)
+//     ts?, th?, rh?, rl?, vel?:[x,y,z], hp?, b?:[x,y,z,loose] }
+//   (ts/th = tomato score/hits, rh/rl = race hoop index/laps, vel = velocity
+//   for dead reckoning, hp = hull, b = basketball — all optional, for
+//   backwards compat with older clients that omit them)
 // Ephemeral drops (action "tom", sent on release, no resend):
 //   { v, p:[x,y,z] spawn, q:[x,y,z] velocity }
 // Incoming packets are validated + clamped; unknowns and over-cap peers are
 // dropped. Presence is derived from packets (roster) with a 4 s timeout.
+//
+// Quick Join: public rooms PUB1..PUB6, filled in order — if the shard you
+// land in already has more pilots than we render (MAX_REMOTES), hop to the
+// next one. No server; the shard's own transport count is the signal.
 
 import { joinRoom, selfId, type Room, type RelayConfig, type TurnServerConfig } from "trystero";
 import { flight, useFlightStore } from "@/state/flight";
 import { useMp } from "@/state/mp";
 import { spawnRemoteTomato, useTomato } from "@/state/tomato";
-import { useRace } from "@/state/race";
+import { ball, useRace } from "@/state/race";
+import { toast } from "@/state/toasts";
+import { HP_MAX } from "@/config/hull";
 
 export { selfId as mpSelfId };
 export const MP_APP_ID = "flyjs-drone-v1";
@@ -100,10 +107,32 @@ export interface RemoteState {
   tomatoHits: number;
   raceHoop: number;
   raceLaps: number;
+  /** Velocity (m/s) — ghosts dead-reckon between 10 Hz packets, and
+   *  pilot-vs-pilot bumps use it for relative impact speed. 0 for older
+   *  clients (they just interpolate, as before). */
+  vx: number;
+  vy: number;
+  vz: number;
+  /** Hull points (HP_MAX for older clients). */
+  hp: number;
+  /** Their basketball, when their race mode is on. */
+  ball: { x: number; y: number; z: number; loose: boolean } | null;
 }
 
 /** Live ghost states by peer id. Mutated outside React; RemotePilots reads it. */
 export const remoteStates = new Map<string, RemoteState>();
+
+/** Dead-reckoned position of a remote pilot right now: last packet position
+ *  + velocity × time since, capped so a dropped packet can't fling a ghost
+ *  across the map. Shared by the ghost renderer and pilot collisions. */
+export const MAX_EXTRAPOLATE_S = 0.3;
+export function predictedRemote(st: RemoteState, out: { x: number; y: number; z: number }) {
+  const age = Math.min((Date.now() - st.seen) / 1000, MAX_EXTRAPOLATE_S);
+  out.x = st.x + st.vx * age;
+  out.y = st.y + st.vy * age;
+  out.z = st.z + st.vz * age;
+  return out;
+}
 
 let room: Room | null = null;
 let roomCode: string | null = null;
@@ -207,6 +236,24 @@ function validPacket(d: unknown): Omit<RemoteState, "seen"> | null {
     tomatoHits: isNum(p.th) ? Math.max(0, Math.floor(p.th)) : 0,
     raceHoop: isNum(p.rh) ? Math.max(0, Math.floor(p.rh)) : 0,
     raceLaps: isNum(p.rl) ? Math.max(0, Math.floor(p.rl)) : 0,
+    ...validVel(p.vel),
+    hp: isNum(p.hp) ? clamp(Math.round(p.hp), 0, HP_MAX) : HP_MAX,
+    ball: validBall(p.b),
+  };
+}
+
+function validVel(v: unknown): { vx: number; vy: number; vz: number } {
+  if (!Array.isArray(v) || v.length !== 3 || !v.every(isNum)) return { vx: 0, vy: 0, vz: 0 };
+  return { vx: clamp(v[0], -60, 60), vy: clamp(v[1], -60, 60), vz: clamp(v[2], -60, 60) };
+}
+
+function validBall(b: unknown): RemoteState["ball"] {
+  if (!Array.isArray(b) || b.length !== 4 || !b.every(isNum)) return null;
+  return {
+    x: clamp(b[0], -200, 200),
+    y: clamp(b[1], -50, 100),
+    z: clamp(b[2], -200, 200),
+    loose: b[3] === 1,
   };
 }
 
@@ -251,7 +298,17 @@ function buildPacket(): StatePacket {
     th: tom.hits,
     rh: race.hoopIndex,
     rl: race.laps,
+    vel: [round2(flight.vel.x), round2(flight.vel.y), round2(flight.vel.z)],
+    hp: Math.round(flight.hp),
+    ...(race.enabled
+      ? { b: [round2(ball.x), round2(ball.y), round2(ball.z), ball.state === "loose" ? 1 : 0] }
+      : {}),
   };
+}
+
+/** Two decimals is plenty for 10 Hz state and keeps packets small. */
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
 }
 
 function broadcastNow(): void {
@@ -347,7 +404,10 @@ export function joinSquad(code: string): void {
     const st = validPacket(data);
     if (!st) return;
     // Peer cap (excluding self): ignore ghosts beyond the cap.
-    if (!remoteStates.has(peerId) && remoteStates.size >= MAX_REMOTES) return;
+    const prev = remoteStates.get(peerId);
+    if (!prev && remoteStates.size >= MAX_REMOTES) return;
+    if (!prev) toast(`✈ ${st.name} joined the sky`, "info");
+    else if (prev.hp > 0 && st.hp <= 0) toast(`💥 ${st.name} went down`, "bad");
     remoteStates.set(peerId, { ...st, seen: Date.now() });
     useMp.getState().upsertPeer({
       id: peerId,
@@ -360,6 +420,7 @@ export function joinSquad(code: string): void {
       tomatoHits: st.tomatoHits,
       raceHoop: st.raceHoop,
       raceLaps: st.raceLaps,
+      hp: st.hp,
     });
   };
 
@@ -370,8 +431,7 @@ export function joinSquad(code: string): void {
     broadcastNow();
   };
   room.onPeerLeave = (peerId: string) => {
-    remoteStates.delete(peerId);
-    useMp.getState().removePeer(peerId);
+    dropPeer(peerId, "left");
     refreshTransportCount();
   };
   // Setter replays already-connected peers, so count is correct even on
@@ -385,21 +445,56 @@ export function joinSquad(code: string): void {
   pruneIv = setInterval(() => {
     const now = Date.now();
     for (const [id, st] of remoteStates) {
-      if (now - st.seen > SEEN_TIMEOUT_MS) {
-        remoteStates.delete(id);
-        useMp.getState().removePeer(id);
-      }
+      if (now - st.seen > SEEN_TIMEOUT_MS) dropPeer(id, "lost signal");
     }
   }, 2000);
 
   useMp.getState().setSession({ room: clean, joined: true });
 }
 
+function dropPeer(peerId: string, why: "left" | "lost signal"): void {
+  const st = remoteStates.get(peerId);
+  if (!st) return;
+  remoteStates.delete(peerId);
+  useMp.getState().removePeer(peerId);
+  toast(`${st.name} ${why}`, "info");
+}
+
+// --- Quick Join --------------------------------------------------------------
+
+const PUBLIC_SHARDS = 6;
+/** Let relays + handshakes settle before judging a shard full. */
+const SHARD_SETTLE_MS = 6000;
+let shardTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function isPublicRoom(code: string | null): boolean {
+  return !!code && /^PUB[1-9]$/.test(code);
+}
+
+/** Join the first public lobby shard with room to spare — no code needed. */
+export function quickJoin(): void {
+  hopToShard(1);
+}
+
+function hopToShard(n: number): void {
+  joinSquad(`PUB${n}`);
+  shardTimer = setTimeout(() => {
+    shardTimer = null;
+    if (currentRoom() !== `PUB${n}`) return; // user moved on
+    // More connected pilots than we render → this shard is full; next one.
+    if (useMp.getState().transportCount > MAX_REMOTES && n < PUBLIC_SHARDS) {
+      toast(`Lobby PUB${n} is full — trying PUB${n + 1}`, "info");
+      hopToShard(n + 1);
+    }
+  }, SHARD_SETTLE_MS);
+}
+
 export function leaveSquad(): void {
   if (sendIv) clearInterval(sendIv);
   if (pruneIv) clearInterval(pruneIv);
   if (degradedCheck) clearTimeout(degradedCheck);
-  sendIv = pruneIv = degradedCheck = null;
+  if (shardTimer) clearTimeout(shardTimer);
+  sendIv = pruneIv = degradedCheck = shardTimer = null;
   sendPacket = null;
   sendTomatoPacket = null;
   if (room) {

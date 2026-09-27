@@ -229,6 +229,83 @@ class EngineAudio {
     });
   }
 
+  /** Hull hit: a crunch (noise) + thump, both scaled by severity 0..1.
+   *  Water hits get a brighter, longer hiss instead of the low crunch. */
+  playHit(intensity: number, water = false) {
+    if (!this.enabled || !this.ctx) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const k = Math.min(1, Math.max(0.15, intensity));
+    const dur = water ? 0.35 : 0.14 + k * 0.12;
+    const len = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.5);
+    const noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    const filt = ctx.createBiquadFilter();
+    filt.type = water ? "highpass" : "lowpass";
+    filt.frequency.value = water ? 900 : 700 + k * 1600;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.16 * k * this.masterVolume, now);
+    ng.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    noise.connect(filt);
+    filt.connect(ng);
+    ng.connect(ctx.destination);
+    noise.start(now);
+    const osc = ctx.createOscillator();
+    const og = ctx.createGain();
+    osc.connect(og);
+    og.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(140 - k * 50, now);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.2);
+    og.gain.setValueAtTime(0.14 * k * this.masterVolume, now);
+    og.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    osc.start(now);
+    osc.stop(now + 0.24);
+  }
+
+  /** Bird strike: a short, indignant squawk. */
+  playSquawk() {
+    if (!this.enabled || !this.ctx) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "square";
+    osc.frequency.setValueAtTime(1500, now);
+    osc.frequency.exponentialRampToValueAtTime(650, now + 0.13);
+    gain.gain.setValueAtTime(0.0, now);
+    gain.gain.linearRampToValueAtTime(0.05 * this.masterVolume, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    osc.start(now);
+    osc.stop(now + 0.17);
+  }
+
+  /** Repair kit: a quick rising three-note arpeggio. */
+  playRepair() {
+    if (!this.enabled || !this.ctx) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    [392, 523.25, 783.99].forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "triangle";
+      const t0 = now + i * 0.07;
+      osc.frequency.setValueAtTime(f, t0);
+      gain.gain.setValueAtTime(0.0, t0);
+      gain.gain.linearRampToValueAtTime(0.1 * this.masterVolume, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
+      osc.start(t0);
+      osc.stop(t0 + 0.23);
+    });
+  }
+
   suspend() {
     this.ctx?.suspend();
   }

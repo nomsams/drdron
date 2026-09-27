@@ -9,6 +9,14 @@ import { flight } from "@/state/flight";
 // Gradient sky dome animating morning → sunset with flight time.
 // Cheap custom shader (drei <Sky> would cost a heavy fragment shader).
 // Segment count comes from the quality preset.
+//
+// The dome is re-centred on the camera every frame (classic skybox). Fixed at
+// the world origin, its far side is up to 235 + ~75 m away when you're near
+// the island's edge — past the camera's 260 m far plane — and the clipped
+// patch let the dark page background show through as a black disc in the
+// sky. Following the camera keeps every point exactly 235 m away. The
+// gradient is direction-based (normalize(position) in local space), so
+// moving the dome doesn't change how the sky looks.
 
 const vertexShader = /* glsl */ `
   varying vec3 vDir;
@@ -60,7 +68,10 @@ export default function SkyDome({ segments = [32, 16] as [number, number] }) {
     []
   );
 
-  useFrame(() => {
+  const mesh = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    mesh.current?.position.copy(state.camera.position);
     const t = flight.dayT;
     const k = keys.current;
     (material.uniforms.uZenith.value as THREE.Color).lerpColors(k.zenith[0], k.zenith[1], t);
@@ -69,7 +80,7 @@ export default function SkyDome({ segments = [32, 16] as [number, number] }) {
   });
 
   return (
-    <mesh material={material} renderOrder={-2} frustumCulled={false}>
+    <mesh ref={mesh} material={material} renderOrder={-2} frustumCulled={false}>
       <sphereGeometry args={[235, segments[0], segments[1]]} />
     </mesh>
   );

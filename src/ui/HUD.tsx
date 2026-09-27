@@ -19,6 +19,7 @@ import MatchBanner from "./MatchBanner";
 import SettingsPanel from "./SettingsPanel";
 import SquadPanel from "./SquadPanel";
 import FpvOverlay from "./FpvOverlay";
+import { HullBar, HullFlash, Toasts } from "./HullBar";
 
 // Minimal DOM overlay. Replaces the upstream FlightHUD + FocusPanel +
 // RaceResults + TakeoffPrompt + IdleInteractionLayer (~25 KB of CV-specific
@@ -214,6 +215,12 @@ export default function HUD({
                   ? "Hold TAKE OFF (or hold F) to launch"
                   : phase.charAt(0).toUpperCase() + phase.slice(1) + "…"}
             </div>
+            {flying && <HullBar />}
+          </div>
+        )}
+        {fpvActive && (
+          <div style={{ marginTop: 28, color: "#8cffb8", fontFamily: "ui-monospace, Menlo, Consolas, monospace" }}>
+            <HullBar compact />
           </div>
         )}
 
@@ -441,6 +448,8 @@ export default function HUD({
       <PeerMarkers />
       <MatchBanner />
       <FpvOverlay />
+      <HullFlash />
+      <Toasts />
       {touchActive(touchMode) && <TouchSticks />}
       {/* basketball release button (mouse + touch) — dims + relabels when
           you're not holding it, so "nothing happens" reads as "go get the
