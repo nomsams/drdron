@@ -37,6 +37,11 @@ export const birdMarks: { x: number; y: number; z: number; vx: number; vy: numbe
 const KNOCK_MS = 2500;
 const knocks: ({ at: number; dx: number; dy: number; dz: number } | undefined)[] = [];
 
+// Debug handle (dev only).
+if (typeof window !== "undefined" && import.meta.env.DEV) {
+  (window as unknown as Record<string, unknown>).__flyjsBirds = { birdMarks };
+}
+
 /** Knock bird `i` away along (dx,dy,dz). Returns false if it was already hit
  *  recently — one strike per bird per knock, not one per frame of overlap. */
 export function knockBird(i: number, dx: number, dy: number, dz: number): boolean {

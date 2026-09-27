@@ -155,6 +155,44 @@ The splash now carries a timestamped boot log — read it before anything else:
   throttle/sport) — it blinks amber under 20%, red under 10%, and forces a
   landing at 0%, mirroring a real FPV failsafe.
 
+## Hull (HP)
+
+`src/config/hull.ts`, `src/state/hull.ts`. Every takeoff starts with a fresh
+100 HP airframe. Impact speed is the velocity component *into* what you hit
+(terrain normal, collider normal, relative velocity for birds/pilots), and
+damage grows super-linearly with it — so skimming low over flat ground is
+free, but slamming into a hillside is not.
+
+| hit | when it hurts | head-on at ~9 m/s | at sport ~16 m/s |
+|---|---|---|---|
+| tree | any real impact (>0.8 m/s) | ≈18 | ≈37 |
+| rock (incl. mountain, waterfall cliff) | any real impact | ≈21 | ≈44 |
+| bird | always (relative speed) | ≈10 | — |
+| other pilot | any real impact | ≈14 | — |
+| ground / water | only above 4 m/s into it | — | sport dive ≈17 |
+
+Hits flash the screen edge red, shake the camera, throw a particle burst
+(leaves, grit, feathers, splash, sparks) and knock birds tumbling. At 0 HP the
+motors cut: the drone tumbles down, and you take off again with a fresh
+airframe. Get HP back from floating **repair kits** (spinning wrench, +30 HP,
+respawn after 30 s, marked as teal diamonds on the minimap — only consumed
+when you're damaged) or by hovering low and slow over the **helipad**. The
+drone now also rests on the water surface instead of sinking to the sea floor.
+
+## Multiplayer
+
+- **Quick join**: one button, no code — joins public lobby `PUB1`, hopping to
+  `PUB2`…`PUB6` if the one it lands in already has more pilots than we render.
+- **Smooth ghosts**: packets carry velocity, so squadmates are dead-reckoned
+  between 10 Hz updates instead of trailing ~100 ms behind.
+- **Shared hull**: HP bars over squadmates' nameplates and in the roster,
+  sparks when they get hit, a toast when they go down. Drones bump off each
+  other mid-air and both take damage — each client resolves its own side, no
+  host needed.
+- **Squadmates' basketballs** are visible (carried under their drone, or loose
+  on the ground after a miss).
+- **Toasts** for pilots joining, leaving, or losing signal.
+
 ## Multiplayer link health
 
 `src/net/mp.ts` pins a curated set of 8 known-reliable public Nostr relays

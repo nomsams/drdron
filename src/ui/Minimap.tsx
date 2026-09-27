@@ -8,6 +8,8 @@ import { BEACH, PAD, PICKUPS, REWARD_RINGS, WORLD } from "@/config/world";
 import { TOMATO_TARGETS } from "@/config/tomato";
 import { isTargetDown, useTomato } from "@/state/tomato";
 import { ball, useRace } from "@/state/race";
+import { REPAIR_KITS } from "@/config/hull";
+import { isKitDown } from "@/state/hull";
 import { useNarrow } from "@/hooks/useNarrow";
 import { heightAt } from "@/lib/terrain";
 
@@ -116,6 +118,19 @@ export default function Minimap() {
           ctx.lineWidth = 1;
           ctx.stroke();
         }
+      }
+      // Repair kits (available only): teal diamonds.
+      ctx.fillStyle = "#4edea3";
+      for (const k of REPAIR_KITS) {
+        if (isKitDown(k.id)) continue;
+        const [x, y] = toPx(k.x, k.z);
+        ctx.beginPath();
+        ctx.moveTo(x, y - 4);
+        ctx.lineTo(x + 3.5, y);
+        ctx.lineTo(x, y + 4);
+        ctx.lineTo(x - 3.5, y);
+        ctx.closePath();
+        ctx.fill();
       }
       // Loose basketball: pulsing marker so a miss is easy to relocate.
       if (useRace.getState().enabled && ball.state === "loose") {

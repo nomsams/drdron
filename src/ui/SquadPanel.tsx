@@ -1,10 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PILOT_COLORS, useMp } from "@/state/mp";
 import { useTomato } from "@/state/tomato";
-import { joinSquad, leaveSquad, mpSelfId, normalizeRoomCode, randomRoomCode, retrySquad } from "@/net/mp";
+import {
+  isPublicRoom,
+  joinSquad,
+  leaveSquad,
+  mpSelfId,
+  normalizeRoomCode,
+  quickJoin,
+  randomRoomCode,
+  retrySquad,
+} from "@/net/mp";
 import { useRace } from "@/state/race";
+import { flight } from "@/state/flight";
+import { HP_MAX } from "@/config/hull";
 
 // Squad panel: P2P multiplayer via room codes. No account, no server —
 // pilots exchange a 4-letter code (or invite link) and connect directly.
@@ -25,6 +36,13 @@ export default function SquadPanel({ onClose }: { onClose: () => void }) {
   const setProfile = useMp((s) => s.setProfile);
   const [code, setCode] = useState(room ?? "");
   const [copied, setCopied] = useState(false);
+  // Your own HP is a mutable field (flight.hp) — refresh the roster row at
+  // 2 Hz so it isn't stale when you're alone in the room.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => tick((n) => n + 1), 500);
+    return () => clearInterval(iv);
+  }, []);
 
   const activeCode = room ?? normalizeRoomCode(code);
 
@@ -154,7 +172,8 @@ export default function SquadPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       {!joined ? (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div>
+          <div style={{ display: "flex", gap: 8 }}>
           <input
             value={code}
             onChange={(e) => setCode(normalizeRoomCode(e.target.value))}
@@ -209,9 +228,34 @@ export default function SquadPanel({ onClose }: { onClose: () => void }) {
           >
             New
           </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => quickJoin()}
+            title="Join the public lobby — no code needed"
+            style={{
+              width: "100%",
+              marginTop: 8,
+              padding: "8px 10px",
+              borderRadius: 8,
+              border: "1px solid rgba(78,222,163,0.45)",
+              background: "rgba(78,222,163,0.14)",
+              color: "#4edea3",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            ⚡ Quick join — public lobby
+          </button>
         </div>
       ) : (
         <div>
+          {isPublicRoom(room) && (
+            <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 6 }}>
+              🌐 Public lobby — anyone on Quick join lands here
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
             <button
               type="button"
@@ -319,6 +363,7 @@ export default function SquadPanel({ onClose }: { onClose: () => void }) {
               tomatoHits={localTomatoHits}
               raceHoop={localRaceHoop}
               raceLaps={localRaceLaps}
+              hp={flight.hp}
               self
             />
             {peers.map((p) => (
@@ -332,6 +377,7 @@ export default function SquadPanel({ onClose }: { onClose: () => void }) {
                 tomatoHits={p.tomatoHits}
                 raceHoop={p.raceHoop}
                 raceLaps={p.raceLaps}
+                hp={p.hp}
               />
             ))}
           </div>
@@ -347,7 +393,7 @@ export default function SquadPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function RosterRow({ name, color, score, lap, flying, tomatoHits, raceHoop, raceLaps, self }: {
+function RosterRow({ name, color, score, lap, flying, tomatoHits, raceHoop, raceLaps, hp, self }: {
   name: string;
   color: string;
   score: number;
@@ -356,16 +402,39 @@ function RosterRow({ name, color, score, lap, flying, tomatoHits, raceHoop, race
   tomatoHits: number;
   raceHoop?: number;
   raceLaps?: number;
+  hp: number;
   self?: boolean;
 }) {
   const raceTag =
     raceLaps || raceHoop
       ? ` · 🏀 ${(raceLaps ?? 0) > 0 ? `lap ${raceLaps}` : `hoop ${(raceHoop ?? 0) + 1}`}`
       : "";
+  const frac = Math.max(0, Math.min(1, hp / HP_MAX));
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
       <span style={{ width: 10, height: 10, borderRadius: "50%", background: color, flexShrink: 0 }} />
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+      <span
+        title={`HP ${Math.round(hp)}`}
+        style={{
+          position: "relative",
+          width: 28,
+          height: 5,
+          borderRadius: 3,
+          background: "rgba(255,255,255,0.12)",
+          overflow: "hidden",
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: `${frac * 100}%`,
+            background: frac > 0.5 ? "#4edea3" : frac > 0.25 ? "#ffd166" : "#ff5a5a",
+          }}
+        />
+      </span>
       {self ? (
         <span style={{ opacity: 0.6 }}>
           {tomatoHits > 0 ? `🍅 ${tomatoHits} · ` : ""}
